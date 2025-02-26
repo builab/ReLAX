@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.linalg import eig, inv
 from scipy.optimize import leastsq
+from scipy.linalg import lstsq
 from scipy.optimize import minimize
 from scipy.interpolate import splprep, splev
 
@@ -99,6 +100,7 @@ def calculate_normal_vector(filament_points):
     return normal_vector / np.linalg.norm(normal_vector)
 
 def process_cross_section(data):
+    """ Even if the cross section doesn't have every filament, it can still project it from the shorter filament """
     shortest_filament_id, shortest_midpoint = find_shortest_filament(data)
     filament_points = data[data['rlnHelicalTubeID'] == shortest_filament_id][['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
     normal_vector = calculate_normal_vector(filament_points)
@@ -138,6 +140,19 @@ def rotate_cross_section(cross_section_points):
     
     return pd.DataFrame(final_rotated_points)
     
+def calculate_rot_angles(rotated_cross_section, fit_method):
+    """ Calculate the rotation angle in a cross section """    
+    if fit_method == 'simple':
+        updated_cross_section = calculate_rot_angles_simple(rotated_cross_section)
+    elif fit_method == 'ellipse':
+        # Fitting using ellipse requires at least 5 points
+        updated_cross_section = calculate_rot_angles_ellipse(rotated_cross_section)
+    else:
+        print("Unknown option. Using simple method")
+        updated_cross_section = calculate_rot_angle_simple(rotated_cross_section)
+    
+    return updated_cross_section 
+       
 def calculate_rot_angles_simple(rotated_cross_section):
     """ Calculate the rotation angle in a cross section """
     updated_cross_section = rotated_cross_section
@@ -155,21 +170,46 @@ def calculate_rot_angles_simple(rotated_cross_section):
     return updated_cross_section
     
 def calculate_rot_angles_ellipse(rotated_cross_section):
-    print('Not yet implemented. Use simple')
-    return calculate_rot_angles_simple(rotated_cross_section)
- 
-def calculate_rot_angles(rotated_cross_section, fit_method):
-    """ Calculate the rotation angle in a cross section """    
-    if fit_method == 'simple':
-        updated_cross_section = calculate_rot_angles_simple(rotated_cross_section)
-    elif fit_method == 'ellipse':
-    	# Fitting using ellipse requires at least 5 points
-        updated_cross_section = calculate_rot_angles_ellipse(rotated_cross_section)
-    else:
-        print("Unknown option. Using simple method")
-        updated_cross_section = calculate_rot_angle_simple(rotated_cross_section)
+    updated_cross_section = rotated_cross_section
+    points = rotated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
+    #print(points)
+    x = points[:, 0]
+    y = points[:, 1]
+    # Fit an ellipse to these points
+    ellipse_params = fit_ellipse(x, y, axis_handle=None)
+    center = [ellipse_params['X0'], ellipse_params['Y0']]
+    axes = [ellipse_params['a'], ellipse_params['b']]
+    angle = ellipse_params['phi']
+
+     
+    print(f"Fitted center: {center}")
+    print(f"Fitted axes: {axes}")
+    print(f"Fitted rotation (radians): {angle}")
+    elliptical_distortion = ellipse_params['a']/ellipse_params['b']
+    print(f"Elliptical distortion: {elliptical_distortion :.2f}")
     
+    fitted_ellipse_pts = ellipse_points(center, axes, angle)
+
+    # Order the original points along the ellipse:
+    angles = angle_along_ellipse(center, axes, angle, points)
+    angles = angles/np.pi*180
+    #print(f"Angles {angles}")
+    
+    sort_order = np.argsort(angles)
+    print(sort_order)
+    updated_cross_sections['NewOrder'] = sort_order
+    
+    updated_cross_section['rlnAngleRot'] = angles   
+
     return updated_cross_section
+ 
+def reorder_doublet_number(rotated_cross_section):
+    """
+    Reorder the doublet number
+    Perhaps include new column with old & new number.
+    Not working yet
+    """
+    return rotated_cross_section
 
 def propagate_rot_to_entire_cilia(cross_section, original_data):
     # Create mappings for adjusted values
@@ -188,130 +228,155 @@ def propagate_rot_to_entire_cilia(cross_section, original_data):
     #print(original_data[['rlnHelicalTubeID', 'rlnAnglePsi', 'rlnAngleRot']].head())
     return original_data
 
-def fit_ellipse_cs(cross_section, dodraw):
+def plot_ellipse_cs(cross_section, output_png):
     """
-    Using fit_ellipse to fit on cross section
+    Plotting the cross section
     """
     points = cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
     #print(points)
     x = points[:, 0]
     y = points[:, 1]
-    # Centralize points
-    x = np.array(x) - np.mean(x)
-    y = np.array(y) - np.mean(y)
-    points = np.column_stack((x, y))
     #print(points)
 
     # Fit an ellipse to these points
-    x0, y0, axis1, axis2, angle = fit_ellipse(x, y)
-     
-    print(f"Fitted center: {x0}, {y0}")
-    print(f"Fitted axes: {axis1}, {axis2}")
-    print(f"Fitted rotation (radians): {angle}")
+    ellipse_params = fit_ellipse(x, y, axis_handle=None)
+    center = [ellipse_params['X0'], ellipse_params['Y0']]
+    axes = [ellipse_params['a'], ellipse_params['b']]
+    angle = ellipse_params['phi']
 
-    fitted_ellipse_pts = ellipse_points([x0, y0], [axis1, axis2], angle)
+    elliptical_distortion = ellipse_params['a']/ellipse_params['b']
+    fitted_ellipse_pts = ellipse_points(center, axes, angle)
 
     # Order the original points along the ellipse:
-    angles = angle_along_ellipse([x0, y0], [axis1, axis2], angle, points)
+    angles = angle_along_ellipse(center, axes, angle, points)
     angles = angles/np.pi*180
-    print(f"Angles {angles}")
-    sort_order = np.argsort(angles)
-    ordered_points = points[sort_order]
 
     # Plotting the results
-    if dodraw:
-        plt.figure(figsize=(8, 6))
-        plt.plot(fitted_ellipse_pts[0], fitted_ellipse_pts[1], 'r--', label='Fitted Ellipse')
-        plt.scatter(x, y, c='b', label='Original Points')
-        plt.scatter(ordered_points[:,0], ordered_points[:,1], 
-        c=angles[sort_order], cmap='viridis', s=80, label='Ordered Points')
-        for i, pt in enumerate(ordered_points):
-            plt.text(pt[0]+0.1, pt[1]+0.1, str(i), fontsize=9)
-        plt.legend()
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.title("Ellipse Fit and Point Ordering")
-        plt.axis('equal')
-        plt.show()
+    plt.figure(figsize=(8, 6))
+    plt.plot(fitted_ellipse_pts[0], fitted_ellipse_pts[1], 'r--', label='Fitted Ellipse')
+    plt.scatter(x, y, c='b', label='Doublet Number')
+    vector_length = 10
+    for i, pt in enumerate(points):
+        plt.text(x[i]+0.5, y[i]+0.5, str(i), fontsize=10)
+        #dx = vector_length * np.cos(angles[i])
+        #dy = vector_length * np.sin(angles[i])
+        #plt.arrow(x[i], y[i], dx, dy, head_width=5, head_length=10, fc='green', ec='green', label='Vector' if i == 0 else None)
+        
+    plt.text(np.mean(x), np.mean(y), f"Elliptical distortion: {elliptical_distortion:.2f}", fontsize=9, ha='center', va='center')
+    plt.legend()
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.title("Ellipse Fit of Cross section")
+    plt.axis('equal')
+    plt.savefig(output_png, dpi=300, bbox_inches='tight')
+    plt.show()
 
 
-def fit_ellipse(x, y):
+def fit_ellipse(x, y, axis_handle=None):
     """
-    Fit an ellipse to the given x, y points using SVD-based method.
-    Returns ellipse parameters: center, axis lengths, rotation angle.
+    Fit an ellipse to the given x, y points using the least squares method.
+    Returns a dictionary containing ellipse parameters. Converted to Python from fit_ellipse
+    matlab script https://www.mathworks.com/matlabcentral/fileexchange/3215-fit_ellipse
+
+    Parameters:
+        x, y (array-like): Coordinates of the points.
+        axis_handle (matplotlib axis, optional): Axis to plot the ellipse. Default is None.
+
+    Returns:
+        dict: Ellipse parameters including center, axes lengths, orientation, etc.
     """
-    # Center the data
-    x_mean, y_mean = np.mean(x), np.mean(y)
-    x_centered, y_centered = x - x_mean, y - y_mean
+    # Ensure inputs are numpy arrays
+    x = np.asarray(x).flatten()
+    y = np.asarray(y).flatten()
 
-    # Build design matrix
-    D = np.vstack([x_centered**2, x_centered*y_centered, y_centered**2, x_centered, y_centered]).T
-    # Perform SVD
-    U, S, Vt = np.linalg.svd(D, full_matrices=False)
-    # Solution is the last column of V
-    a = Vt[-1, :]
+    # Remove bias (mean) to improve numerical stability
+    mean_x, mean_y = np.mean(x), np.mean(y)
+    x -= mean_x
+    y -= mean_y
 
-    # Extract parameters
-    A, B, C_coef, D_coef, E_coef = a
+    # Build the design matrix
+    X = np.column_stack([x**2, x*y, y**2, x, y])
 
-    # Compute center of the ellipse
-    denom = B**2 - 4*A*C_coef
-    if np.abs(denom) < 1e-10:  # Avoid division by zero
-        raise ValueError("Invalid ellipse parameters. The points may be collinear or nearly collinear.")
+    # Solve the least squares problem
+    a, _, _, _ = lstsq(X, -np.ones_like(x), lapack_driver='gelsy')
 
-    x0 = (2*C_coef*D_coef - B*E_coef) / denom + x_mean
-    y0 = (2*A*E_coef - B*D_coef) / denom + y_mean
+    # Extract parameters from the solution
+    A, B, C, D, E = a
 
-    # Compute the orientation and axes lengths
-    term = np.sqrt((A - C_coef)**2 + B**2)
-    # Semi-axes lengths
-    numerator = 2*(A*E_coef**2 + C_coef*D_coef**2 - B*D_coef*E_coef - 4*A*C_coef*(D_coef**2 + E_coef**2))
-    denom1 = (B**2 - 4*A*C_coef)*( (C_coef + A) + term )
-    denom2 = (B**2 - 4*A*C_coef)*( (C_coef + A) - term )
+    # Check if the conic equation represents an ellipse
+    discriminant = B**2 - 4*A*C
+    if discriminant >= 0:
+        warnings.warn("The points do not form a valid ellipse (discriminant >= 0).")
+        return {
+            'a': None,
+            'b': None,
+            'phi': None,
+            'X0': None,
+            'Y0': None,
+            'X0_in': None,
+            'Y0_in': None,
+            'long_axis': None,
+            'short_axis': None,
+            'status': 'Invalid ellipse (discriminant >= 0)'
+        }
 
-    # Check for invalid axes lengths
-    if denom1 <= 0 or denom2 <= 0:
-        raise ValueError("Invalid ellipse parameters. The points may be collinear or nearly collinear.")
+    # Remove tilt (orientation) from the ellipse
+    orientation_rad = 0.5 * np.arctan2(B, (A - C))
+    cos_phi, sin_phi = np.cos(orientation_rad), np.sin(orientation_rad)
 
-    a_len = np.sqrt(numerator/denom1)
-    b_len = np.sqrt(numerator/denom2)
+    # Rotate the ellipse to remove tilt
+    A_rot = A * cos_phi**2 - B * cos_phi * sin_phi + C * sin_phi**2
+    C_rot = A * sin_phi**2 + B * cos_phi * sin_phi + C * cos_phi**2
+    D_rot = D * cos_phi - E * sin_phi
+    E_rot = D * sin_phi + E * cos_phi
 
-    # Compute rotation angle (in radians)
-    if B == 0 and A < C_coef:
-        theta = 0
-    elif B == 0 and A >= C_coef:
-        theta = np.pi/2
-    else:
-        theta = 0.5 * np.arctan(B/(A - C_coef))
+    # Ensure A_rot and C_rot are positive
+    if A_rot < 0 or C_rot < 0:
+        A_rot, C_rot, D_rot, E_rot = -A_rot, -C_rot, -D_rot, -E_rot
 
-    return (x0, y0), (a_len, b_len), theta
+    # Compute ellipse parameters
+    X0 = (mean_x - D_rot / (2 * A_rot))
+    Y0 = (mean_y - E_rot / (2 * C_rot))
+    F = 1 + (D_rot**2) / (4 * A_rot) + (E_rot**2) / (4 * C_rot)
+    a = np.sqrt(F / A_rot)
+    b = np.sqrt(F / C_rot)
 
-    
-def ellipse_params(params, threshold=1e-10):
-    """ Convert ellipse coefficients to center, axes, and rotation angle """
-    a, b, c, d, e, f = params
-    num = b**2 - 4*a*c
+    # Rotate the center back to the original coordinate system
+    R = np.array([[cos_phi, sin_phi], [-sin_phi, cos_phi]])
+    X0_in, Y0_in = R @ np.array([X0, Y0])
 
-    if abs(num) < threshold:
-        # Handle the special case of a circle or near-circle
-        x0 = -d / (2*a)
-        y0 = -e / (2*c)
-        axis1 = axis2 = np.sqrt(d**2 + e**2 - 4*a*f) / (2*a)
-        angle = 0  # No rotation angle for a circle
-    else:
-        x0 = (2*c*d - b*e) / num
-        y0 = (2*a*e - b*d) / num
-        angle = 0.5 * np.arctan2(b, a - c)
+    # Compute long and short axes
+    long_axis = 2 * max(a, b)
+    short_axis = 2 * min(a, b)
 
-        up = 2 * (a*e**2 + c*d**2 - b*d*e + num*f)
-        down1 = (b**2 - 4*a*c) * ((c-a) + np.sqrt((a-c)**2 + b**2))
-        down2 = (b**2 - 4*a*c) * ((c-a) - np.sqrt((a-c)**2 + b**2))
+    # Pack ellipse parameters into a dictionary
+    ellipse_t = {
+        'a': a,
+        'b': b,
+        'phi': orientation_rad,
+        'X0': X0,
+        'Y0': Y0,
+        'X0_in': X0_in,
+        'Y0_in': Y0_in,
+        'long_axis': long_axis,
+        'short_axis': short_axis,
+        'status': 'Success'
+    }
 
-        axis1 = np.sqrt(up / down1)
-        axis2 = np.sqrt(up / down2)
+    # Plot the ellipse if axis_handle is provided
+    if axis_handle is not None:
+        theta = np.linspace(0, 2 * np.pi, 100)
+        ellipse_x = X0 + a * np.cos(theta)
+        ellipse_y = Y0 + b * np.sin(theta)
+        rotated_ellipse = R @ np.vstack([ellipse_x, ellipse_y])
 
-    return x0, y0, axis1, axis2, angle
-    
+        axis_handle.plot(rotated_ellipse[0, :], rotated_ellipse[1, :], 'r', label='Fitted Ellipse')
+        axis_handle.scatter(x + mean_x, y + mean_y, color='blue', label='Points')
+        axis_handle.set_aspect('equal', adjustable='box')
+        axis_handle.legend()
+
+    return ellipse_t
+
 
 def ellipse_points(center, axes, angle, num_points=100):
     """

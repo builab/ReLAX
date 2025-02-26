@@ -7,7 +7,7 @@
 
 # To check if HelicalTubuleID = 11-19 also work
 
-from util.geom import process_cross_section, rotate_cross_section, calculate_rot_angles, propagate_rot_to_entire_cilia, fit_ellipse_cs
+from util.geom import process_cross_section, rotate_cross_section, calculate_rot_angles, propagate_rot_to_entire_cilia, plot_ellipse_cs
 from util.io import run_model2point, create_starfile, process_imod_point_file
 
 import argparse
@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--angpix", type=float, default=8.48, help="Pixel size in Angstroms (default: 8.48)")
     parser.add_argument("--tomo_angpix", type=float, default=2.12, help="Pixel size of unbinned tomogram in Angstroms (default: 2.12)")
     parser.add_argument("--fit", type=str, default="simple", help="Fitting type: simple or ellipse")
+    parser.add_argument("--reorder", type=float, default="0", help="Reorder filament using ellipse fit")
     parser.add_argument("--output", type=str, default="out.star", help="Output STAR file for interpolation (default: output_interpolation_with_angles.star)")
 
     # Parse arguments
@@ -37,12 +38,16 @@ def main():
     output=args.output
     fit_method = args.fit
     tomo_angpix = args.tomo_angpix
+    reorder = float(args.reorder)
     
     print(f'Input model file: {input_file}')
     print(f'Output star file: {output}')
     print(f'Pixel size of input model: {angpix} Angstrom')
     print(f'Pixel size of original tomogram: {tomo_angpix} Angstrom')
     print(f'Fitting method: {fit_method}')
+    print(f'Reorder doublet: {reorder} (0: no, 1: yes)')
+    if reorder > 0 and fit_method != 'ellipse':
+    	print('Reorder only available with ellipse fitting')
     print(f'Repeating unit to interpolate: {spacing} Angstrom')
     
     # Convert IMOD to txt file
@@ -63,8 +68,9 @@ def main():
         cross_section = process_cross_section(obj_data)
         rotated_cross_section = rotate_cross_section(cross_section)
 
-        # Test fit ellipse
-        #fit_ellipse_cs(rotated_cross_section, True)
+        output_cs = input_file.replace(".mod", f"_{i+1}.png")
+        # Plot cross section
+        plot_ellipse_cs(rotated_cross_section, output_cs)
         # obtain rot 
         updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
         #print(rot_angles)
