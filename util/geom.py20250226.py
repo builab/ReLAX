@@ -138,7 +138,7 @@ def rotate_cross_section(cross_section_points):
     
     return pd.DataFrame(final_rotated_points)
     
-def calculate_rot_angles_simple(rotated_cross_section):
+def calculate_rot_angles(rotated_cross_section):
     """ Calculate the rotation angle in a cross section """
     updated_cross_section = rotated_cross_section
     rot_angles = []
@@ -153,23 +153,7 @@ def calculate_rot_angles_simple(rotated_cross_section):
     
     updated_cross_section['rlnAngleRot'] = rot_angles   
     return updated_cross_section
-    
-def calculate_rot_angles_ellipse(rotated_cross_section):
-    print('Not yet implemented. Use simple')
-    return calculate_rot_angles_simple(rotated_cross_section)
  
-def calculate_rot_angles(rotated_cross_section, fit_method):
-    """ Calculate the rotation angle in a cross section """    
-    if fit_method == 'simple':
-        updated_cross_section = calculate_rot_angles_simple(rotated_cross_section)
-    elif fit_method == 'ellipse':
-    	# Fitting using ellipse requires at least 5 points
-        updated_cross_section = calculate_rot_angles_ellipse(rotated_cross_section)
-    else:
-        print("Unknown option. Using simple method")
-        updated_cross_section = calculate_rot_angle_simple(rotated_cross_section)
-    
-    return updated_cross_section
 
 def propagate_rot_to_entire_cilia(cross_section, original_data):
     # Create mappings for adjusted values
@@ -203,7 +187,8 @@ def fit_ellipse_cs(cross_section, dodraw):
     #print(points)
 
     # Fit an ellipse to these points
-    x0, y0, axis1, axis2, angle = fit_ellipse(x, y)
+    ellipse_params_fit = fit_ellipse(x, y)
+    x0, y0, axis1, axis2, angle = ellipse_params(ellipse_params_fit)
      
     print(f"Fitted center: {x0}, {y0}")
     print(f"Fitted axes: {axis1}, {axis2}")
@@ -236,56 +221,32 @@ def fit_ellipse_cs(cross_section, dodraw):
 
 
 def fit_ellipse(x, y):
-    """
-    Fit an ellipse to the given x, y points using SVD-based method.
-    Returns ellipse parameters: center, axis lengths, rotation angle.
-    """
-    # Center the data
-    x_mean, y_mean = np.mean(x), np.mean(y)
-    x_centered, y_centered = x - x_mean, y - y_mean
+    
+    D1 = np.vstack([x**2, x*y, y**2]).T
+    D2 = np.vstack([x, y, np.ones_like(x)]).T
+    S1 = np.dot(D1.T, D1)
+    S2 = np.dot(D1.T, D2)
+    S3 = np.dot(D2.T, D2)
+    
+    T = -np.linalg.inv(S3).dot(S2.T)
+    M = S1 + S2.dot(T)
+    M = np.array(M)
+    
+    C = np.zeros((3, 3))
+    C[0, 2] = C[2, 0] = 2
+    C[1, 1] = -1
 
-    # Build design matrix
-    D = np.vstack([x_centered**2, x_centered*y_centered, y_centered**2, x_centered, y_centered]).T
-    # Perform SVD
-    U, S, Vt = np.linalg.svd(D, full_matrices=False)
-    # Solution is the last column of V
-    a = Vt[-1, :]
+    E, V = np.linalg.eig(np.linalg.inv(M).dot(C))
+    n = np.argmax(np.abs(E))
+    a = V[:, n]
 
-    # Extract parameters
-    A, B, C_coef, D_coef, E_coef = a
-
-    # Compute center of the ellipse
-    denom = B**2 - 4*A*C_coef
-    if np.abs(denom) < 1e-10:  # Avoid division by zero
-        raise ValueError("Invalid ellipse parameters. The points may be collinear or nearly collinear.")
-
-    x0 = (2*C_coef*D_coef - B*E_coef) / denom + x_mean
-    y0 = (2*A*E_coef - B*D_coef) / denom + y_mean
-
-    # Compute the orientation and axes lengths
-    term = np.sqrt((A - C_coef)**2 + B**2)
-    # Semi-axes lengths
-    numerator = 2*(A*E_coef**2 + C_coef*D_coef**2 - B*D_coef*E_coef - 4*A*C_coef*(D_coef**2 + E_coef**2))
-    denom1 = (B**2 - 4*A*C_coef)*( (C_coef + A) + term )
-    denom2 = (B**2 - 4*A*C_coef)*( (C_coef + A) - term )
-
-    # Check for invalid axes lengths
-    if denom1 <= 0 or denom2 <= 0:
-        raise ValueError("Invalid ellipse parameters. The points may be collinear or nearly collinear.")
-
-    a_len = np.sqrt(numerator/denom1)
-    b_len = np.sqrt(numerator/denom2)
-
-    # Compute rotation angle (in radians)
-    if B == 0 and A < C_coef:
-        theta = 0
-    elif B == 0 and A >= C_coef:
-        theta = np.pi/2
-    else:
-        theta = 0.5 * np.arctan(B/(A - C_coef))
-
-    return (x0, y0), (a_len, b_len), theta
-
+    def ellipse_residuals(params, x, y):
+        a, b, c, d, e, f = params
+        return ((a * x**2 + b * x * y + c * y**2 + d * x + e * y + f)**2).sum()
+    
+    params_initial = [a[0], a[1], a[2], 0, 0, -1]
+    result = minimize(ellipse_residuals, params_initial, args=(x, y))
+    return result.x
     
 def ellipse_params(params, threshold=1e-10):
     """ Convert ellipse coefficients to center, axes, and rotation angle """
