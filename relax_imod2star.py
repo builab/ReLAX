@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--angpix", type=float, default=8.48, help="Pixel size in Angstroms (default: 8.48)")
     parser.add_argument("--tomo_angpix", type=float, default=2.12, help="Pixel size of unbinned tomogram in Angstroms (default: 2.12)")
     parser.add_argument("--fit", type=str, default="simple", help="Fitting type: simple or ellipse")
+    parser.add_argument("--polarity", type=str, default="", help="Polarity file for angle prediction.")
     parser.add_argument("--reorder", type=float, default="0", help="Reorder filament using ellipse fit")
     parser.add_argument("--output", type=str, default="out.star", help="Output STAR file for interpolation (default: output_interpolation_with_angles.star)")
 
@@ -39,6 +40,7 @@ def main():
     fit_method = args.fit
     tomo_angpix = args.tomo_angpix
     reorder = float(args.reorder)
+    polarity = args.polarity
     
     print(f'Input model file: {input_file}')
     print(f'Output star file: {output}')
@@ -47,8 +49,12 @@ def main():
     print(f'Fitting method: {fit_method}')
     print(f'Reorder doublet: {reorder} (0: no, 1: yes)')
     if reorder > 0 and fit_method != 'ellipse':
-    	print('Reorder only available with ellipse fitting')
+        print('Reorder only available with ellipse fitting')
     print(f'Repeating unit to interpolate: {spacing} Angstrom')
+    if polarity != "":
+        print(f'Polarity file: {polarity} ')
+    else:
+        print(f'Fitting without polarity')
     
     # Convert IMOD to txt file
     input_txt = input_file.replace(".mod", ".txt")
