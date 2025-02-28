@@ -64,7 +64,7 @@ def find_cross_section_points(data, plane_normal, reference_point):
     Find the points on each filament closest to the cross-sectional plane,
     add 90 degrees to the Psi angle, and return them.
     """
-    cross_section_points = []
+    cross_section = []
     grouped = data.groupby('rlnHelicalTubeID')
 
     for filament_id, group in grouped:
@@ -73,19 +73,9 @@ def find_cross_section_points(data, plane_normal, reference_point):
         closest_idx = np.argmin(distances)
         closest_point = group.iloc[closest_idx]
 
-        # Add 90 degrees to the Psi angle
-        #Psi = closest_point['rlnAnglePsi'] + 90.0
-
-        cross_section_points.append({
-            'rlnHelicalTubeID': filament_id,
-            'rlnCoordinateX': closest_point['rlnCoordinateX'],
-            'rlnCoordinateY': closest_point['rlnCoordinateY'],
-            'rlnCoordinateZ': closest_point['rlnCoordinateZ'],
-            'rlnAngleRot': 0,
-            'rlnAngleTilt': closest_point['rlnAngleTilt'],
-            'rlnAnglePsi': closest_point['rlnAnglePsi'],
-        })
-    return pd.DataFrame(cross_section_points)
+        cross_section.append(closest_point)
+        
+    return pd.DataFrame(cross_section, columns=data.columns)
 
 
 def find_shortest_filament(data):
@@ -112,15 +102,16 @@ def process_cross_section(data):
     plane_normal, plane_point = define_plane(normal_vector, shortest_midpoint)
     return find_cross_section_points(data, plane_normal, plane_point)
 
-def rotate_cross_section(cross_section_points):
+def rotate_cross_section(cross_section):
     """
-    Rotates cross-section points by Psi and Tilt angles to transform into Z plane
+    Rotates cross-section by Psi and Tilt angles to transform into Z plane
     """
-    psi = 90 - cross_section_points['rlnAnglePsi'].median()
-    tilt = cross_section_points['rlnAngleTilt'].median()
+    rotated_cross_section = cross_section
+    psi = 90 - cross_section['rlnAnglePsi'].median()
+    tilt = cross_section['rlnAngleTilt'].median()
     final_rotated_points = []
     rotated_points = []
-    for (_, row) in cross_section_points.iterrows():
+    for index, row in rotated_cross_section.iterrows():
         x, y, z = row['rlnCoordinateX'], row['rlnCoordinateY'], row['rlnCoordinateZ']
         
         # Rotation around Z-axis by Psi
@@ -140,10 +131,13 @@ def rotate_cross_section(cross_section_points):
             [0, np.sin(-tilt_rad),  np.cos(-tilt_rad)]
         ])
         rotated_point = Ry @ rotated_point
-        
-        final_rotated_points.append({'rlnCoordinateX': rotated_point[0], 'rlnCoordinateY': rotated_point[1], 'rlnCoordinateZ': rotated_point[2], 'rlnAngleRot' : row['rlnAngleRot'], 'rlnAngleTilt' : 0, 'rlnAnglePsi' : 0, 'rlnHelicalTubeID': row['rlnHelicalTubeID']})
+        rotated_cross_section.at[index, 'rlnCoordinateX'] = rotated_point[0]
+        rotated_cross_section.at[index, 'rlnCoordinateY'] = rotated_point[1]
+        rotated_cross_section.at[index, 'rlnCoordinateZ'] = rotated_point[2]
     
-    return pd.DataFrame(final_rotated_points)
+    # Replace rlnAngleTilt, rlnAnglePsi with 0
+    rotated_cross_section[['rlnAngleTilt', 'rlnAnglePsi']] = 0
+    return rotated_cross_section
     
 def calculate_rot_angles(rotated_cross_section, fit_method):
     """ Calculate the rotation angle in a cross section """    
