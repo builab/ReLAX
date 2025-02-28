@@ -67,7 +67,7 @@ def main():
     #print(objects)
         
     # create starfile with interpolation and angle
-    create_starfile(objects, output.replace(".star", "_init.star"))
+    #create_starfile(objects, output.replace(".star", "_init.star"))
      
     new_objects = [] 
     # find cross section
