@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--reorder", type=float, default="0", help="Reorder filament using ellipse fit")
     parser.add_argument("--mod_suffix", type=str, default="", help="Suffix of IMOD models without .mod")
     parser.add_argument("--output", type=str, default="out.star", help="Output STAR file for interpolation (default: output_interpolation_with_angles.star)")
+    parser.add_argument("--do_plot", type=str, default="out.star", help="Output STAR file for interpolation (default: output_interpolation_with_angles.star)")
 
     # Parse arguments
     args = parser.parse_args()

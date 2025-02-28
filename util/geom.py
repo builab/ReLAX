@@ -268,7 +268,7 @@ def plot_ellipse_cs(cross_section, output_png):
     plt.title("Ellipse Fit of Cross section")
     plt.axis('equal')
     plt.savefig(output_png, dpi=300, bbox_inches='tight')
-    plt.show()
+    #plt.show()
 
 
 def fit_ellipse(x, y, axis_handle=None):
