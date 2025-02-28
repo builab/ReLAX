@@ -4,11 +4,10 @@
 # Authors: Molly & HB, 02/2025
 # TODO: We need to plot in function for calculate_rot_angles, also, calculate a elliptically
 # TODO: Draw the filament in the propagate_rot_to_entire_cilia as well for visualization
-
-# To check if HelicalTubuleID = 11-19 also work
+# TODO: Check for flipping doublet order in the case of polarity=1
 
 from util.geom import process_cross_section, rotate_cross_section, calculate_rot_angles, propagate_rot_to_entire_cilia, plot_ellipse_cs
-from util.io import run_model2point, create_starfile, process_imod_point_file
+from util.io import create_starfile, process_imod_point_file
 
 import argparse
 import numpy as np
@@ -28,6 +27,7 @@ def main():
     parser.add_argument("--fit", type=str, default="simple", help="Fitting type: simple or ellipse")
     parser.add_argument("--polarity", type=str, default="", help="Polarity file for angle prediction.")
     parser.add_argument("--reorder", type=float, default="0", help="Reorder filament using ellipse fit")
+    parser.add_argument("--mod_suffix", type=str, default="", help="Suffix of IMOD models without .mod")
     parser.add_argument("--output", type=str, default="out.star", help="Output STAR file for interpolation (default: output_interpolation_with_angles.star)")
 
     # Parse arguments
@@ -42,7 +42,10 @@ def main():
     reorder = float(args.reorder)
     polarity = args.polarity
     
+    df_polarity = []
+    
     print(f'Input model file: {input_file}')
+    print(f'Model suffix: {args.mod_suffix}')
     print(f'Output star file: {output}')
     print(f'Pixel size of input model: {angpix} Angstrom')
     print(f'Pixel size of original tomogram: {tomo_angpix} Angstrom')
@@ -51,17 +54,14 @@ def main():
     if reorder > 0 and fit_method != 'ellipse':
         print('Reorder only available with ellipse fitting')
     print(f'Repeating unit to interpolate: {spacing} Angstrom')
-    if polarity != "":
-        print(f'Polarity file: {polarity} ')
+    if args.polarity != "":
+        print(f'Polarity file: {args.polarity} ')
     else:
         print(f'Fitting without polarity')
     
-    # Convert IMOD to txt file
-    input_txt = input_file.replace(".mod", ".txt")
-    run_model2point(input_file, input_txt)
 
-    # interpolation and acquire data
-    objects = process_imod_point_file(input_txt, spacing, angpix, tomo_angpix)  
+    # interpolation, estimate psi and tilt
+    objects = process_imod_point_file(input_file, args.mod_suffix, spacing, angpix, tomo_angpix, args.polarity)  
     
     #print(objects)
         
@@ -73,14 +73,14 @@ def main():
     for i, obj_data in enumerate(objects):
         cross_section = process_cross_section(obj_data)
         rotated_cross_section = rotate_cross_section(cross_section)
-
+		
+		# Plot cross section
         output_cs = input_file.replace(".mod", f"_{i+1}.png")
-        # Plot cross section
         plot_ellipse_cs(rotated_cross_section, output_cs)
+
         # obtain rot 
         updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
-        #print(rot_angles)
-        #final_rotated_cross_section = merge_rot_with_original(cross_section, rot_angles)
+
         # create starfile for final 
         #new_objects.append(propagate_rot_to_entire_cilia(final_rotated_cross_section, obj_data))
         new_objects.append(propagate_rot_to_entire_cilia(updated_cross_section, obj_data))

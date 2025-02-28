@@ -1,3 +1,8 @@
+"""
+Geom package for ReLAX
+Written by Molly Yu & Huy Bui, McGill 
+"""
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
