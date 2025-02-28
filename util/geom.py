@@ -196,7 +196,7 @@ def calculate_rot_angles_ellipse(rotated_cross_section):
     
     sort_order = np.argsort(angles)
     print(sort_order)
-    updated_cross_sections['NewOrder'] = sort_order
+    updated_cross_section['NewOrder'] = sort_order
     
     updated_cross_section['rlnAngleRot'] = angles   
 
