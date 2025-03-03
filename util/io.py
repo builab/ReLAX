@@ -1,6 +1,7 @@
 """
 IO package for ReLAX
 Written by Molly Yu, McGill 
+TODO: In the future, make option for create_starfile with Warp or Relion4 way or perhaps Relion 5 way
 """
 
 import starfile
@@ -59,8 +60,8 @@ def process_imod_point_file(input_file, mod_suffix, spacing, angpix, tomo_angpix
     
     # TomoName = base_name(input_file)
     base_name = os.path.basename(input_file)
-    tomo_name = os.path.splitext(base_name)[0]
-    tomo_name = tomo_name.removesuffix(mod_suffix)
+    #tomo_name = os.path.splitext(base_name)[0]
+    tomo_name = base_name.removesuffix(mod_suffix)
     
     with open(input_txt, "r") as file:
         lines = [list(map(float, line.strip().split())) for line in file]
@@ -102,7 +103,7 @@ def process_imod_point_file(input_file, mod_suffix, spacing, angpix, tomo_angpix
                 rot, tilt, psi = calculate_tilt_psi_angles(vector)
                 tomo_part_id = count + i + 1
                 image_name = f"{tomo_name}/{tomo_part_id:d}"
-                results.append([int(obj_id - 1) * 10 + int(filament_id), *interpolated_pts[i] / angpix, rot, tilt, psi, tomo_name, tomo_part_id, image_name, polarity_prob])
+                results.append([int(obj_id - 1) * 10 + int(filament_id), *interpolated_pts[i] / angpix * tomo_angpix, rot, tilt, psi, tomo_name, tomo_part_id, image_name, polarity_prob])
             count = tomo_part_id
         objects.append(pd.DataFrame(results, columns=["rlnHelicalTubeID", "rlnCoordinateX", "rlnCoordinateY", "rlnCoordinateZ", "rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi", "rlnTomoName", "rlnTomoParticleId", "rlnTomoParticleName", "rlnAnglePsiProbability"]))
     
@@ -124,4 +125,12 @@ def create_starfile(df_list, output_star_file):
     starfile.write(star_data, output_star_file, overwrite=True)
     print(f"Successfully created STAR file: {output_star_file}")
     
+def read_starfile_into_cilia_object(input_star_file):
+    """
+    Read star file and separate into object for easy processing
+    TEMPORARY
+    Not done for > 1 cilia yet and nothing regarding OpticsGroup block
+    """
+    obj = starfile.read(input_star_file)
+    return [obj]
     

@@ -2,9 +2,10 @@
 # Script to convert IMOD star file to Relion 5 star file
 # Testing now with 2 cilia
 # Authors: Molly & HB, 02/2025
-# TODO: We need to plot in function for calculate_rot_angles, also, calculate a elliptically
+# python ~/Documents/GitHub/ReLAX/relax_imod2star.py --i CU428lowmag_11_14.00Apx_doublets.mod --o CU428lowmag_11.star --tomo_angpix 3.37 --angpix 14.00 --mod_suffix _14.00Apx_doublets.mod --fit ellipse
 # TODO: Draw the filament in the propagate_rot_to_entire_cilia as well for visualization
 # TODO: Check for flipping doublet order in the case of polarity=1
+# NOTE: a & b axis might be reversed
 
 from util.geom import process_cross_section, rotate_cross_section, calculate_rot_angles, propagate_rot_to_entire_cilia, plot_ellipse_cs
 from util.io import create_starfile, process_imod_point_file
