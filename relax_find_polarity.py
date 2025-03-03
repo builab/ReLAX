@@ -53,7 +53,7 @@ def main():
     
     # Test the generate cross section
     objects = read_starfile_into_cilia_object('CU428lowmag_11.star')
-    tomo_z_slices_to_avg = 50
+    tomo_z_slices_to_avg = 10
     for i, obj_data in enumerate(objects):
         cross_section = process_cross_section(obj_data)
         cross_section_2D = generate_tomogram_cross_section(tomogram_file, cross_section, tomo_z_slices_to_avg)
