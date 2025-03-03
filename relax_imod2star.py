@@ -75,8 +75,8 @@ def main():
     for i, obj_data in enumerate(objects):
         cross_section = process_cross_section(obj_data)
         rotated_cross_section = rotate_cross_section(cross_section)
-        #print(rotated_cross_section)		
-		# Plot cross section
+        #print(rotated_cross_section)        
+        # Plot cross section
         output_cs = input_file.replace(".mod", f"_{i+1}.png")
         plot_ellipse_cs(rotated_cross_section, output_cs)
 

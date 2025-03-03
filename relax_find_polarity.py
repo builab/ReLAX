@@ -53,7 +53,7 @@ def main():
     
     # Test the generate cross section
     objects = read_starfile_into_cilia_object('CU428lowmag_11.star')
-    tomo_z_slices_to_avg = 10
+    tomo_z_slices_to_avg = 2
     for i, obj_data in enumerate(objects):
         cross_section = process_cross_section(obj_data)
         cross_section_2D = generate_tomogram_cross_section(tomogram_file, cross_section, tomo_z_slices_to_avg)
@@ -79,6 +79,8 @@ def main():
         with mrcfile.new(f"rotated_avg_slice_{i}.mrc", overwrite=True) as mrc:
             mrc.set_data(low_pass_2D(avg_slice, lowpass, angpix).astype(np.float32))
             print(f"Averaged slice {i} from rotated subtomogram saved to 'rotated_avg_slice_{i}.mrc'")
+            
+    # Test align with the reference
                         
 if __name__ == "__main__":
     main()

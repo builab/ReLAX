@@ -61,7 +61,7 @@ def process_imod_point_file(input_file, mod_suffix, spacing, angpix, tomo_angpix
     # TomoName = base_name(input_file)
     base_name = os.path.basename(input_file)
     #tomo_name = os.path.splitext(base_name)[0]
-    tomo_name = base_name.removesuffix(mod_suffix)
+    tomo_name = base_name.removesuffix(mod_suffix + ".mod")
     
     with open(input_txt, "r") as file:
         lines = [list(map(float, line.strip().split())) for line in file]
