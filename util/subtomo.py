@@ -158,8 +158,10 @@ def rotate_subtomogram_zyz(subtomo, alpha, beta, gamma):
     rotated_subtomo : numpy.ndarray
         Rotated subtomogram
     """
-    # Make a copy to avoid modifying the original
-    rotated = subtomo.copy()
+    # Make a copy to avoid modifying the original, need float32 as float16 will error
+    rotated = subtomo.copy().astype(np.float32)
+    
+    print(rotated.shape)
     
     # First rotation around Z axis (alpha)
     rotated = rotate(rotated, angle=alpha, axes=(1, 2), reshape=False, mode='constant')

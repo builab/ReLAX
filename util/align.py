@@ -251,16 +251,28 @@ def main():
     
     # Save best aligned images
     best_aligned_stack = []
+    average = []
     for img_id in range(len(image_stack)):
         if img_id in best_alignments:
             ref_id = best_alignments[img_id]['RefID']
             best_aligned_stack.append(aligned_images[(img_id, ref_id)])
+            
+    # Save the average of all the aligned image
+
+
     
     if best_aligned_stack:
         best_aligned_stack = np.array(best_aligned_stack)
         best_aligned_path = os.path.join(args.output_dir, "best_aligned.mrcs")
         save_mrc_stack(best_aligned_stack, best_aligned_path)
         print(f"Best aligned images saved to: {best_aligned_path}")
+        
+        # Save the average image as a separate MRC file
+        average_image = np.mean(best_aligned_stack, axis=0)
+        average_path = os.path.join(args.output_dir, "average.mrc")
+        # Assuming save_mrc takes a single 2D image
+        save_mrc(average_image, average_path)
+        print(f"Average of best aligned images saved to: {average_path}")
     
     # Optionally save all aligned images
     if args.save_aligned:
@@ -280,6 +292,8 @@ def main():
                 writer.writerow(best_alignments[img_id])
     
     print(f"Best alignment results saved to: {best_csv_path}")
+    
+    
 
 if __name__ == "__main__":
     main()
