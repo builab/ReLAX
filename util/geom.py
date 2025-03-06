@@ -11,6 +11,9 @@ from scipy.optimize import leastsq
 from scipy.linalg import lstsq
 from scipy.optimize import minimize
 from scipy.interpolate import splprep, splev
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 """
 The X, Y, Z should be calculated using unbinned pixel
@@ -22,22 +25,25 @@ def interpolate_spline(points, angpix, spacing):
     TODO: Need to deal with error if this is too short? Min 5 particles?
     """
     points = np.array(points)
-    #print(points.T)
     tck, _ = splprep(points.T, s=0)  # Create spline representation
     distances = np.linspace(0, 1, int(np.ceil(points.shape[0] * 100)))  # Dense samples. 100 times the points?
     
     # Evaluate the spline at dense samples
     dense_points = np.array(splev(distances, tck)).T
     
-    # Calculate cumulative distances along the spline
-    diffs = np.diff(dense_points, axis=0)
-    cumulative_distances = np.insert(np.cumsum(np.sqrt((diffs**2).sum(axis=1))), 0, 0)*angpix
-    #print(cumulative_distances)
+    cum_distances_all = cumulative_distance(dense_points*angpix)
     
     # Resample at equal intervals
-    resampled_distances = np.arange(0, cumulative_distances[-1], spacing)
-    #print(resampled_distances)
-    return np.array([np.interp(resampled_distances, cumulative_distances, dense_points[:, i]) for i in range(3)]).T
+    resampled_distances = np.arange(0, cum_distances_all[-1], spacing)
+    interpolated_pts = np.array([np.interp(resampled_distances, cum_distances_all, dense_points[:, i]) for i in range(3)]).T
+    cum_distances_angst = cumulative_distance(interpolated_pts*angpix)
+    return interpolated_pts, cum_distances_angst
+    
+def cumulative_distance(points):
+    # Compute the Euclidean distance between consecutive points
+    distances = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    # Compute the cumulative sum, adding an initial zero for the first point
+    return np.concatenate(([0], np.cumsum(distances)))
     
 def calculate_tilt_psi_angles(v):
     """
@@ -47,8 +53,6 @@ def calculate_tilt_psi_angles(v):
     """
     v = v / np.linalg.norm(v)
     rot = 0
-    #tilt = np.pi - np.arccos(v[2])
-    #psi = -np.pi/2 + np.arctan2(v[0], v[1]) # Old formula
     tilt = np.arccos(-v[2])
     psi = np.arctan2(-v[1], v[0])
     return np.degrees(rot), np.degrees(tilt), np.degrees(psi)
@@ -106,8 +110,7 @@ def rotate_cross_section(cross_section):
     rotated_cross_section = cross_section
     psi = 90 - cross_section['rlnAnglePsi'].median()
     tilt = cross_section['rlnAngleTilt'].median()
-    final_rotated_points = []
-    rotated_points = []
+    
     for index, row in rotated_cross_section.iterrows():
         x, y, z = row['rlnCoordinateX'], row['rlnCoordinateY'], row['rlnCoordinateZ']
         
@@ -168,7 +171,6 @@ def calculate_rot_angles_simple(rotated_cross_section):
 def calculate_rot_angles_ellipse(rotated_cross_section):
     updated_cross_section = rotated_cross_section
     points = rotated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
-    #print(points)
     x = points[:, 0]
     y = points[:, 1]
     # Fit an ellipse to these points
@@ -177,7 +179,6 @@ def calculate_rot_angles_ellipse(rotated_cross_section):
     axes = [ellipse_params['a'], ellipse_params['b']]
     angle = ellipse_params['phi']
 
-     
     print(f"Fitted center: {center}")
     print(f"Fitted axes: {axes}")
     print(f"Fitted rotation (radians): {angle}")
@@ -189,7 +190,6 @@ def calculate_rot_angles_ellipse(rotated_cross_section):
     # Order the original points along the ellipse:
     angles = angle_along_ellipse(center, axes, angle, points)
     angles = angles/np.pi*180
-    #print(f"Angles {angles}")
     
     sort_order = np.argsort(angles)
     print(sort_order)
@@ -209,19 +209,11 @@ def reorder_doublet_number(rotated_cross_section):
 
 def propagate_rot_to_entire_cilia(cross_section, original_data):
     # Create mappings for adjusted values
-    # In princial, this is not needed
-    #psi_mapping = cross_section_final.set_index('rlnHelicalTubeID')['rlnAnglePsi'].to_dict()
     rot_mapping = cross_section.set_index('rlnHelicalTubeID')['rlnAngleRot'].to_dict()
-    
-    # Print the mappings to ensure they are correct
-    #print("Psi mapping:", psi_mapping)
-    #print("Rot mapping:", rot_mapping)
 
     # Propagate the values to the entire original dataset
-    #original_data['rlnAnglePsi'] = original_data['rlnHelicalTubeID'].map(psi_mapping)
     original_data['rlnAngleRot'] = original_data['rlnHelicalTubeID'].map(rot_mapping)
     
-    #print(original_data[['rlnHelicalTubeID', 'rlnAnglePsi', 'rlnAngleRot']].head())
     return original_data
 
 def plot_ellipse_cs(cross_section, output_png):
@@ -229,10 +221,8 @@ def plot_ellipse_cs(cross_section, output_png):
     Plotting the cross section
     """
     points = cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
-    #print(points)
     x = points[:, 0]
     y = points[:, 1]
-    #print(points)
 
     # Fit an ellipse to these points
     ellipse_params = fit_ellipse(x, y, axis_handle=None)
@@ -251,12 +241,8 @@ def plot_ellipse_cs(cross_section, output_png):
     plt.figure(figsize=(8, 6))
     plt.plot(fitted_ellipse_pts[0], fitted_ellipse_pts[1], 'r--', label='Fitted Ellipse')
     plt.scatter(x, y, c='b', label='Doublet Number')
-    vector_length = 10
     for i, pt in enumerate(points):
         plt.text(x[i]+0.5, y[i]+0.5, str(i), fontsize=10)
-        #dx = vector_length * np.cos(angles[i])
-        #dy = vector_length * np.sin(angles[i])
-        #plt.arrow(x[i], y[i], dx, dy, head_width=5, head_length=10, fc='green', ec='green', label='Vector' if i == 0 else None)
         
     plt.text(np.mean(x), np.mean(y), f"Elliptical distortion: {elliptical_distortion:.2f}", fontsize=9, ha='center', va='center')
     plt.legend()
@@ -265,8 +251,6 @@ def plot_ellipse_cs(cross_section, output_png):
     plt.title("Ellipse Fit of Cross section")
     plt.axis('equal')
     plt.savefig(output_png, dpi=300, bbox_inches='tight')
-    #plt.show()
-
 
 def fit_ellipse(x, y, axis_handle=None):
     """
