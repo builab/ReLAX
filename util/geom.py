@@ -18,7 +18,12 @@ import matplotlib.pyplot as plt
 """
 The X, Y, Z should be calculated using unbinned pixel
 """
-
+def normalize_angle(angle):
+    """
+    Normalize angle to range -180 to 180 in Relion
+    """
+    return (angle + 180) % 360 - 180
+    
 def interpolate_spline(points, angpix, spacing):
     """
     Interpolate points along a line with a specified spacing using splines.
@@ -55,7 +60,9 @@ def calculate_tilt_psi_angles(v):
     rot = 0
     tilt = np.arccos(-v[2])
     psi = np.arctan2(-v[1], v[0])
-    return np.degrees(rot), np.degrees(tilt), np.degrees(psi)
+    psi_degree = normalize_angle(np.degrees(psi))
+    
+    return np.degrees(rot), np.degrees(tilt), psi_degree
 
 def define_plane(normal_vector, reference_point):
     return normal_vector, reference_point
@@ -78,7 +85,6 @@ def find_cross_section_points(data, plane_normal, reference_point):
         cross_section.append(closest_point)
         
     return pd.DataFrame(cross_section, columns=data.columns)
-
 
 def find_shortest_filament(data):
     shortest_length, shortest_midpoint, shortest_filament_id = float('inf'), None, None
@@ -153,7 +159,11 @@ def calculate_rot_angles(rotated_cross_section, fit_method):
     return updated_cross_section 
        
 def calculate_rot_angles_simple(rotated_cross_section):
-    """ Calculate the rotation angle in a cross section """
+    """ 
+    Calculate the rotation angle in a cross section
+    Tested to work very well with polarity 1
+    Seems to be good with polarity 0 as well
+    """
     updated_cross_section = rotated_cross_section
     rot_angles = []
     n = len(rotated_cross_section)
@@ -162,13 +172,19 @@ def calculate_rot_angles_simple(rotated_cross_section):
         x_prev, y_prev = rotated_cross_section.iloc[prev_idx][['rlnCoordinateX', 'rlnCoordinateY']]
         x_next, y_next = rotated_cross_section.iloc[next_idx][['rlnCoordinateX', 'rlnCoordinateY']]
         delta_x, delta_y = x_next - x_prev, y_next - y_prev
-        rot = -np.degrees(np.arctan2(delta_x, delta_y))
+        rot = np.degrees(np.arctan2(delta_y, delta_x)) - 180
         rot_angles.append(rot)
     
-    updated_cross_section['rlnAngleRot'] = rot_angles   
+    updated_cross_section['rlnAngleRot'] = rot_angles
+    updated_cross_section['rlnAngleRot'] = updated_cross_section['rlnAngleRot'].apply(normalize_angle) 
+    #print(updated_cross_section['rlnAngleRot'])
     return updated_cross_section
     
 def calculate_rot_angles_ellipse(rotated_cross_section):
+    """ 
+    Calculate the rotation angle in a cross section using ellipse method
+
+    """
     updated_cross_section = rotated_cross_section
     points = rotated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
     x = points[:, 0]
@@ -189,24 +205,50 @@ def calculate_rot_angles_ellipse(rotated_cross_section):
 
     # Order the original points along the ellipse:
     angles = angle_along_ellipse(center, axes, angle, points)
-    angles = angles/np.pi*180
+    # Empirical correction by -270 degrees
+    angles = np.degrees(angles) - 270
     
-    sort_order = np.argsort(angles)
-    print(sort_order)
-    updated_cross_section['NewOrder'] = sort_order
+    #sort_order = np.argsort(angles)
+    #print(sort_order)
+    #updated_cross_section['NewOrder'] = sort_order
     
-    updated_cross_section['rlnAngleRot'] = angles   
-
+    updated_cross_section['rlnAngleRot'] = angles
+    updated_cross_section['rlnAngleRot'] = updated_cross_section['rlnAngleRot'].apply(normalize_angle) 
+    #print(updated_cross_section['rlnAngleRot'])
     return updated_cross_section
  
-def reorder_doublet_number(rotated_cross_section):
+def get_filament_order_from_rot(rotated_cross_section):
     """
     Reorder the doublet number
     Perhaps include new column with old & new number.
     Not working yet
     """
-    return rotated_cross_section
+    # Sort the DataFrame by 'rlnAngleRot' in decreasing order
+    sorted_df = rotated_cross_section.sort_values(by='rlnAngleRot', ascending=False)
+    
+    # Extract the 'rlnHelicalTubeID' values in the new order
+    sorted_filament_ids = sorted_df['rlnHelicalTubeID'].tolist()
+    return sorted_filament_ids
 
+def renumber_filament_ids(df, sorted_filament_ids):
+    """
+    Renumber the 'rlnHelicalTubeID' column in the DataFrame based on the new order.
+    
+    Args:
+        df (pd.DataFrame): Original DataFrame with 'rlnHelicalTubeID'.
+        sorted_tube_ids (list): Sorted list of 'rlnHelicalTubeID' values.
+    
+    Returns:
+        pd.DataFrame: DataFrame with renumbered 'rlnHelicalTubeID'.
+    """
+    # Create a mapping from the original IDs to the new order
+    id_mapping = {original_id: new_id for new_id, original_id in enumerate(sorted_filament_ids, start=1)}
+    
+    # Apply the mapping to the 'rlnHelicalTubeID' column
+    df['rlnHelicalTubeID'] = df['rlnHelicalTubeID'].map(id_mapping)
+    
+    return df
+    
 def propagate_rot_to_entire_cilia(cross_section, original_data):
     # Create mappings for adjusted values
     rot_mapping = cross_section.set_index('rlnHelicalTubeID')['rlnAngleRot'].to_dict()

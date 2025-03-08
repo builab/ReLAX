@@ -1,14 +1,18 @@
 """
-Tuned by Claude 3.7 Sonnet
-TODO: extraction still not working 
+Written by Claude 3.7 Sonnet, Modified by Huy Bui, McGill.
+Using rotation convention of Relion
+https://relion.readthedocs.io/en/release-3.1/Reference/Conventions.html
 Apparently, in the mrcfile reading, z is the first dimension. So z, y, x. 
 """
+
 import mrcfile
 import starfile
 import numpy as np
-from scipy.ndimage import rotate
+from scipy.ndimage import rotate, affine_transform
+
 from scipy import ndimage
 from scipy.fft import fftn, ifftn, fftshift, ifftshift
+
 
 def extract_subtomograms(tomogram_path, centers, size_d):
     """
@@ -165,13 +169,99 @@ def rotate_subtomogram_zyz(subtomo, alpha, beta, gamma):
     # First rotation around Z axis (alpha)
     rotated = rotate(rotated, angle=alpha, axes=(1, 2), reshape=False, mode='constant')
     
-    # Second rotation around Y axis (beta)
-    rotated = rotate(rotated, angle=beta, axes=(0, 2), reshape=False, mode='constant')
+    # Second rotation around Y axis (beta). Modified due to right-hand rule for rotations in scipy.ndimage
+    rotated = rotate(rotated, angle=-beta, axes=(0, 2), reshape=False, mode='constant')
     
     # Third rotation around Z axis (gamma)
     rotated = rotate(rotated, angle=gamma, axes=(1, 2), reshape=False, mode='constant')
     
     return rotated
+    
+def rotate_subtomogram_zyz_single_interpolation(subtomo, alpha, beta, gamma):
+    """
+    Rotate a subtomogram using Euler angles in ZYZ convention
+    using a single interpolation step via a combined rotation matrix.
+    Specifically handles MRC convention where Z is axis 0.
+    
+    Parameters:
+    -----------
+    subtomo : numpy.ndarray
+        3D subtomogram array in MRC convention (Z, Y, X) order
+    alpha : float
+        First rotation angle around Z axis (in degrees)
+    beta : float
+        Second rotation angle around Y axis (in degrees)
+    gamma : float
+        Third rotation angle around Z axis (in degrees)
+        
+    Returns:
+    --------
+    rotated_subtomo : numpy.ndarray
+        Rotated subtomogram
+    """
+    # Convert to float32 to avoid data type issues with affine_transform
+    # This handles float16 input arrays that scipy can't process directly
+    subtomo_float32 = subtomo.astype(np.float32)
+
+    # Convert angles to radians
+    alpha_rad = np.deg2rad(alpha)
+    beta_rad = np.deg2rad(beta)
+    gamma_rad = np.deg2rad(gamma)
+    
+    # Create rotation matrices for each axis
+    # Remember that for MRC, the axes are: Z=0, Y=1, X=2
+    # But scipy's affine_transform works in reversed order (X,Y,Z)
+    
+    # Build the rotation matrices for the ZYZ convention
+    # First rotation around Z axis (alpha)
+    Rz_alpha = np.array([
+        [np.cos(alpha_rad), -np.sin(alpha_rad), 0],
+        [np.sin(alpha_rad), np.cos(alpha_rad), 0],
+        [0, 0, 1]
+    ])
+    
+    # Second rotation around Y axis (beta)
+    Ry_beta = np.array([
+        [np.cos(beta_rad), 0, np.sin(beta_rad)],
+        [0, 1, 0],
+        [-np.sin(beta_rad), 0, np.cos(beta_rad)]
+    ])
+    
+    # Third rotation around Z axis (gamma)
+    Rz_gamma = np.array([
+        [np.cos(gamma_rad), -np.sin(gamma_rad), 0],
+        [np.sin(gamma_rad), np.cos(gamma_rad), 0],
+        [0, 0, 1]
+    ])
+    
+    # Calculate the combined rotation matrix (R = Rz(alpha) * Ry(beta) * Rz(gamma))
+    R = np.dot(Rz_alpha, np.dot(Ry_beta, Rz_gamma))
+    
+    # For MRC convention (Z,Y,X), we need to swap axes for affine_transform
+    # which expects (X,Y,Z), so we reverse the rotation matrix
+    R_mrc = R[::-1, ::-1]
+    
+    # Get the center of the volume
+    center = np.array(subtomo.shape) // 2
+    
+    # For MRC convention, we reverse the center coordinates
+    center_mrc = center[::-1]
+    
+    # Calculate the offset for the affine transform
+    offset = center_mrc - np.dot(R_mrc, center_mrc)
+    
+    # Apply the rotation with a single interpolation
+    rotated = affine_transform(
+        subtomo_float32,
+        matrix=R_mrc,
+        offset=offset,
+        order=3,  # cubic interpolation
+        mode='constant',
+        cval=0.0
+    )
+    
+    return rotated
+
 
 def rotate_subtomograms_zyz(subtomograms, euler_angles):
     """
@@ -196,10 +286,11 @@ def rotate_subtomograms_zyz(subtomograms, euler_angles):
     
     for subtomo, angles in zip(subtomograms, euler_angles):
         alpha, beta, gamma = angles
-        rotated = rotate_subtomogram_zyz(subtomo, alpha, beta, gamma)
+        rotated = rotate_subtomogram_zyz_single_interpolation(subtomo, alpha, beta, gamma)
         rotated_subtomograms.append(rotated)
     
     return rotated_subtomograms
+    
 
 def generate_subtomogram_cross_section(subtomogram, eulers, z_slices):
     """
@@ -227,7 +318,7 @@ def generate_subtomogram_cross_section(subtomogram, eulers, z_slices):
     alpha, beta, gamma = eulers
     
     # Rotate the tomogram
-    rotated_subtomogram = rotate_subtomogram_zyz(subtomogram, alpha, beta, gamma)
+    rotated_subtomogram = rotate_subtomogram_zyz_single_interpolation(subtomogram, alpha, beta, gamma)
     
     with mrcfile.new('tmp.mrc', overwrite=True) as mrc:
         mrc.set_data(rotated_subtomogram)

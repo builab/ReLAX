@@ -33,6 +33,7 @@ def main():
     parser = argparse.ArgumentParser(description="Script to align cross-section using fixed polarity.")
     parser.add_argument("--input_dir", type=str, required=True, help="Directory containing .star files")
     parser.add_argument("--tomo_dir", type=str, required=True, help="Directory containing .mrc files")
+    parser.add_argument("--tomo_pattern", type=str, required=True, help="Tomo filename pattern (e.g., '{base_name}_8.48Apx.mrc', 'rec_{base_name}.mrc')")
     parser.add_argument("--stack_dir", type=str, required=True, help="Output directory containing .mrcs files")
     parser.add_argument("--box_size", type=int, default=106, required=True, help="Subtomo box size (~900 Angstrom)")
     parser.add_argument("--ref", type=str, required=True, help="Reference stack")
@@ -78,7 +79,7 @@ def main():
             base_name = base_name[:-5]  # Remove the last 5 characters (".star")  
               
         # Construct the expected .mrc file path
-        mrc_file = os.path.join(args.tomo_dir, f"{base_name}_8.48Apx.mrc")
+        mrc_file = os.path.join(args.tomo_dir, args.tomo_pattern.format(base_name=base_name))
         
         # Check if the .mrc file exists
         if os.path.exists(mrc_file):

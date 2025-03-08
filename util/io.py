@@ -17,7 +17,9 @@ from util.geom import (
     rotate_cross_section, 
     calculate_rot_angles, 
     propagate_rot_to_entire_cilia, 
-    plot_ellipse_cs
+    plot_ellipse_cs,
+    renumber_filament_ids,
+    get_filament_order_from_rot
 )
 
 def create_dir(directory):
@@ -360,10 +362,17 @@ def imod2star(
         plot_ellipse_cs(rotated_cross_section, output_cs)
 
         # Calculate rotation angles
-        updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
+        updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)        
+        df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)
+        
+        if fit_method == 'ellipse' and reorder:
+        	print('Reorder the doublet number')
+        	sorted_filament_ids = get_filament_order_from_rot(updated_cross_section)
+        	print(sorted_filament_ids)   
+        	df_star = renumber_filament_ids(df_star, sorted_filament_ids)
 
         # Propagate rotation to the entire cilia
-        new_objects.append(propagate_rot_to_entire_cilia(updated_cross_section, obj_data))
+        new_objects.append(df_star)
         
     # Create final star file
     create_starfile(new_objects, output_star_file)
