@@ -20,6 +20,14 @@ from util.geom import (
     plot_ellipse_cs
 )
 
+def create_dir(directory):
+    """Create a directory if it does not exist."""
+    try:
+        os.makedirs(directory)
+        print(f"Directory created: {directory}")
+    except FileExistsError:
+        print(f"Directory already exists: {directory}")  
+
 def run_imod_command(command: List[str], input_file: str, output_file: str) -> bool:
     """
     Runs an IMOD command with the given input and output files.
@@ -66,7 +74,38 @@ def run_point2model(input_txt: str, output_mod: str) -> bool:
     """
     command = ["point2model", input_txt, output_mod]
     return run_imod_command(command, input_txt, output_mod)
-        
+
+def get_obj_ids_from_model(model_file):
+    """
+    Get the obj_id in the IMOD model file
+    Args:
+        model_file: Path to the input .mod file
+    
+    Returns:
+        obj_ids: returns a set object containing unique id    
+    """
+    input_txt = model_file.replace(".mod", ".txt")
+    run_model2point(model_file, input_txt)
+    # Extract tomogram name
+    with open(input_txt, "r") as file:
+        lines = [list(map(float, line.strip().split())) for line in file]
+    obj_list = [row[0] for row in lines]
+    return set(obj_list)
+    
+    
+def get_filament_ids_from_object(cilia_object, obj_id):
+    """
+    Get the filament_id in the object file (1+ cilia)
+    Args:
+        cilia object: List of df_star for each cilia
+        obj_id: object id
+    Returns:
+        filament_ids: returns a sorted set filament containing unique id    
+    """
+    df_star = cilia_object[obj_id - 1]
+    unique_sorted_tub_ids = df_star['rlnHelicalTubeID'].drop_duplicates().sort_values().tolist()
+    return unique_sorted_tub_ids
+    
 def read_polarity_csv(polarity_file: str) -> Optional[pd.DataFrame]:
     """
     Read the polarity file. Ensures it has exactly 3 columns.
@@ -78,12 +117,10 @@ def read_polarity_csv(polarity_file: str) -> Optional[pd.DataFrame]:
         DataFrame with polarity data or None if error occurs
     """
     try:
-        df_polarity = pd.read_csv(polarity_file, header=None)
-        
+        df_polarity = pd.read_csv(polarity_file)     
         if df_polarity.shape[1] != 3:
             raise ValueError(f"Incorrect number of columns in {polarity_file}: Expected 3, got {df_polarity.shape[1]}")
         
-        df_polarity.columns = ['rlnTomoName', 'ObjectId', 'Polarity']
         return df_polarity
 
     except Exception as e:
@@ -103,7 +140,7 @@ def polarity_lookup(df_polarity: pd.DataFrame, tomo_name: str, obj_id: int) -> i
         int: Polarity value (0 or 1), or -1 if not found
     """
     try:
-        mask = (df_polarity['rlnTomoName'] == tomo_name) & (df_polarity['ObjectId'] == obj_id)
+        mask = (df_polarity['rlnTomoName'] == tomo_name) & (df_polarity['ObjectID'] == obj_id)
         polarity = df_polarity.loc[mask, 'Polarity'].values[0]
     except IndexError:
         print(f"No polarity found for tomo {tomo_name} and object {obj_id}.")

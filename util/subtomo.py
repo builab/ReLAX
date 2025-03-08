@@ -4,6 +4,7 @@ TODO: extraction still not working
 Apparently, in the mrcfile reading, z is the first dimension. So z, y, x. 
 """
 import mrcfile
+import starfile
 import numpy as np
 from scipy.ndimage import rotate
 from scipy import ndimage
@@ -65,7 +66,7 @@ def extract_subtomograms(tomogram_path, centers, size_d):
             y_end = min(tomogram.shape[1], center_y + half_y + (size_y % 2))
             z_end = min(tomogram.shape[0], center_z + half_z + (size_z % 2))
             
-            print(f"{x_end}, {y_end}, {z_end}")
+            #print(f"{x_end}, {y_end}, {z_end}")
             
             # Extract the subtomogram
             subtomo = tomogram[z_start:z_end, y_start:y_end, x_start:x_end]
@@ -160,9 +161,7 @@ def rotate_subtomogram_zyz(subtomo, alpha, beta, gamma):
     """
     # Make a copy to avoid modifying the original, need float32 as float16 will error
     rotated = subtomo.copy().astype(np.float32)
-    
-    print(rotated.shape)
-    
+        
     # First rotation around Z axis (alpha)
     rotated = rotate(rotated, angle=alpha, axes=(1, 2), reshape=False, mode='constant')
     
@@ -273,8 +272,6 @@ def generate_tomogram_cross_section(tomogram_file, cross_section, z_slices):
     phi = cross_section['rlnAnglePsi'].median() 
     tilt = cross_section['rlnAngleTilt'].median()
    
-    print(center_cs)
-    print(dim_z)
     center_subtomogram = extract_subtomograms(tomogram_file, [center_cs], [dim_z, dim_z, dim_z])
     #with mrcfile.new('tmp.mrc', overwrite=True) as mrc:
     #    mrc.set_data(center_subtomogram[0])
@@ -437,6 +434,98 @@ def filter_mrc_file(mrc_path, output_path, resolution_in_Angstrom, pixel_size_in
                     except AttributeError:
                         pass
 
+def write_subtomograms_to_mrc(subtomograms, file_prefix='subtomogram_', dtype='float32'):
+    """
+    Save a list of subtomograms as .mrc files with a specified file name prefix and data type.
+
+    Args:
+        subtomograms (list of numpy arrays): List of subtomograms (3D arrays) to save.
+        file_prefix (str): Prefix for the output .mrc filenames. Default is 'subtomogram_'.
+        dtype (str): Data type for the output .mrc files. Supported values: 'float16', 'float32', 'int16'.
+                     Default is 'float32'.
+    """
+    # Map the dtype string to the corresponding NumPy dtype
+    dtype_map = {
+        'float16': np.float16,
+        'float32': np.float32,
+        'int16': np.int16,
+    }
+
+    # Validate the dtype
+    if dtype not in dtype_map:
+        raise ValueError(f"Unsupported dtype: {dtype}. Supported values are 'float16', 'float32', 'int16'.")
+
+    # Get the NumPy dtype
+    np_dtype = dtype_map[dtype]
+
+    for i, subtomo in enumerate(subtomograms):
+        # Construct the output filename
+        output_filename = f"{file_prefix}{i}.mrc"
+        
+        # Convert the subtomogram to the specified dtype
+        subtomo_converted = subtomo.astype(np_dtype)
+        
+        # Save the subtomogram as an .mrc file
+        with mrcfile.new(output_filename, overwrite=True) as mrc:
+            mrc.set_data(subtomo_converted)
+            print(f"Subtomogram {i} saved to '{output_filename}' with dtype {dtype}")
+
+def get_median_row(group):
+    median_value = group['rlnTomoParticleId'].median()
+    closest_row = group.iloc[(group['rlnTomoParticleId'] - median_value).abs().argmin()]
+    return closest_row
+ 
+def generate_2d_stack(tomogram_file, df_star, box_size, z_slices_to_avg):
+    """
+    Generate the 2d stack of all the doublets,     df_star is for 1 cilia only
+    Args:
+        tomogram_file: tomogram mrc file
+        df_star: dataframe for star (1 cilia only)
+        box_size: box size
+        z_slices_to_avg
+    Returns:
+        Output stack
+    """
+    # Need to sort by filamentID
+    result_df = (
+        df_star.groupby('rlnHelicalTubeID', group_keys=False)
+        .apply(get_median_row)
+        .reset_index(drop=True)  # Reset the index to avoid ambiguity
+        .sort_values('rlnHelicalTubeID', ascending=True)
+    )
+    #result_df = df_star.groupby('rlnHelicalTubeID', group_keys=False).apply(get_median_row).sort_values('rlnHelicalTubeID', ascending=True)
+    centers = result_df[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].astype(int).values.tolist()
+
+    print("Extracting subtomograms")
+    subtomograms = extract_subtomograms(tomogram_file, centers, [box_size, box_size, box_size])
+    #write_subtomograms_to_mrc(subtomograms, 'subtomo_')
+        
+    eulers = np.array(result_df[['rlnAngleRot', 'rlnAngleTilt', 'rlnAnglePsi']])
+    #print(eulers)
+    # Reverse
+    euler_angles = (-eulers[:, [2, 1, 0]]).tolist()
+    rotated_subtomograms = rotate_subtomograms_zyz(subtomograms, euler_angles)
+    #write_subtomograms_to_mrc(rotated_subtomograms, 'rotated_subtomo_')
+
+    # Average Z sections for each rotated subtomogram
+    averaged_slices = average_z_sections(rotated_subtomograms, z_slices_to_avg)
+    print(f"Created {len(averaged_slices)} averaged slices of shape {averaged_slices[0].shape}")
+    #write_subtomograms_to_mrc(averaged_slices, 'rotated_avg_slice_')
+    
+    stack = np.stack(averaged_slices, axis=0)       
+    return stack
+    
+def write_cross_section_to_mrc(tomogram_file, star_file, output_file, angpix, tomo_z_slices_to_avg=20, lowpass=40):
+    objects = read_starfile_into_cilia_object(star_file)
+
+    for i, obj_data in enumerate(objects):
+        cross_section = process_cross_section(obj_data)
+        cross_section_2D = generate_tomogram_cross_section(tomogram_file, cross_section, tomo_z_slices_to_avg)
+        with mrcfile.new(f"{output_file}", overwrite=True) as mrc:
+            mrc.set_data(low_pass_2D(cross_section_2D[0], lowpass, angpix).astype(np.float32))
+            print(f"Cross section saved to {output_file}")
+        continue
+        
 # Example usage
 if __name__ == "__main__":
     tomogram_file = "/Users/kbui2/Desktop/Sessions/CU428lowmag_11_14.00Apx_refined.mrc"
@@ -447,7 +536,7 @@ if __name__ == "__main__":
         (200, 250, 80),
         (100, 150, 60)
     ]
-    print(centers)
+    #print(centers)
     # Size of each cubic subtomogram
     box_size = 64
     
@@ -474,13 +563,7 @@ if __name__ == "__main__":
     print(f"Created {len(averaged_slices)} averaged slices of shape {averaged_slices[0].shape}")
     
     # Example: Save the rotated subtomograms
-    for i, subtomo in enumerate(rotated_subtomograms):
-        with mrcfile.new(f"rotated_subtomo_{i}.mrc", overwrite=True) as mrc:
-            mrc.set_data(subtomo.astype(np.float32))
-            print(f"Rotated subtomogram {i} saved to 'rotated_subtomo_{i}.mrc'")
+    write_subtomograms_to_mrc(rotated_subtomograms, 'rotated_subtomo_')
     
     # Example: Save the averaged slices from rotated subtomograms
-    for i, avg_slice in enumerate(averaged_slices):
-        with mrcfile.new(f"rotated_avg_slice_{i}.mrc", overwrite=True) as mrc:
-            mrc.set_data(avg_slice.astype(np.float32))
-            print(f"Averaged slice {i} from rotated subtomogram saved to 'rotated_avg_slice_{i}.mrc'")
+    write_subtomograms_to_mrc(averaged_slices, 'rotated_avg_slice_')

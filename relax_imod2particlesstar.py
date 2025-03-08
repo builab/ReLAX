@@ -5,8 +5,7 @@
 # python ~/Documents/GitHub/ReLAX/relax_imod2star.py --i input_mod --o particles.star --tomo_angpix 3.37 --angpix 14.00 --mod_suffix _14.00Apx_doublets.mod --fit ellipse
 # NOTE: a & b axis might be reversed
 
-from util.geom import process_cross_section, rotate_cross_section, calculate_rot_angles, propagate_rot_to_entire_cilia, plot_ellipse_cs
-from util.io import create_starfile, imod2star, read_polarity_csv, sanitize_particles_star
+from util.io import create_dir, create_starfile, imod2star, read_polarity_csv, sanitize_particles_star
 
 import argparse
 import numpy as np
@@ -14,17 +13,6 @@ import pandas as pd
 import starfile
 import glob
 import os
-
-
-    
-def create_dir(directory):
-    """Create a directory if it does not exist."""
-    try:
-        os.makedirs(directory)
-        print(f"Directory created: {directory}")
-    except FileExistsError:
-        print(f"Directory already exists: {directory}")
-    
 
 # main
 def main():
@@ -42,6 +30,7 @@ def main():
     parser.add_argument("--reorder", type=int, default="0", help="Reorder filament using ellipse fit")
     parser.add_argument("--mod_suffix", type=str, default="", help="Suffix of IMOD models without .mod")
     parser.add_argument("--star_format", type=str, default="relion5", help="Suffix of IMOD models without .mod")
+    parser.add_argument("--write_particles", action="store_true", help="Write particles.star file if this flag is set")
 
     # Parse arguments
     args = parser.parse_args()
@@ -67,15 +56,14 @@ def main():
         print(f'Polarity file: {args.polarity} ')
     else:
         print(f'Fitting without polarity') 
-        
+    print(f'Write particles.star: {args.write_particles}')
+
     create_dir(output_dir)
-    sub_dir = os.path.join(output_dir, 'annotation')
-    create_dir(sub_dir)
     
     if args.polarity != "":
         df_polarity = read_polarity_csv(args.polarity)
     else:
-        df_polarity = pd.DataFrame(columns=['rlnTomoName', 'ObjectId', 'Polarity'])
+        df_polarity = pd.DataFrame(columns=['rlnTomoName', 'ObjectID', 'Polarity'])
 
     pattern = os.path.join(input_dir, f"*{args.mod_suffix}.mod")
     
@@ -86,14 +74,15 @@ def main():
     for input_file in matching_files:
         filename = os.path.basename(input_file)
         tomo_name = filename.removesuffix(args.mod_suffix + ".mod")
-        output_star_file = os.path.join(sub_dir, tomo_name + ".star")
+        output_star_file = os.path.join(output_dir, tomo_name + ".star")
         print(f'---> Processing {filename} <---')
         df_cilia = imod2star(input_file, output_star_file, angpix, tomo_angpix, spacing, fit_method, df_polarity, args.mod_suffix, reorder)
         for i, obj_data in enumerate(df_cilia):
             df_particles.append(obj_data)
-        
-    print('----- Writing combined particle file -----')
-    create_starfile(sanitize_particles_star(pd.concat(df_particles, ignore_index=True), args.star_format), os.path.join(output_dir, 'particles.star'))
+
+    if args.write_particles:
+        print('----- Writing combined particle file -----')
+        create_starfile(sanitize_particles_star(pd.concat(df_particles, ignore_index=True), args.star_format), 'particles.star')
 
 if __name__ == "__main__":
     main()
