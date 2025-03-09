@@ -72,12 +72,14 @@ def find_cross_section_points(data, plane_normal, reference_point):
     add 90 degrees to the Psi angle, and return them.
     """
     cross_section = []
-    grouped_data = data.groupby('rlnHelicalTubeID')
-    for filament_id, group in grouped_data:
+
+    for filament_id, group in data.groupby('rlnHelicalTubeID'):
         points = group[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
-        distances = np.linalg.norm(np.cross(plane_normal, points - reference_point), axis=1) / np.linalg.norm(plane_normal)
-        closest_point = group.iloc[np.argmin(distances)]
+        distances = np.array([calculate_perpendicular_distance(point, plane_normal, reference_point) for point in points])
+        closest_idx = np.argmin(distances)
+        closest_point = group.iloc[closest_idx]
         cross_section.append(closest_point)
+        
     return pd.DataFrame(cross_section, columns=data.columns)
 
 def find_shortest_filament(data):
