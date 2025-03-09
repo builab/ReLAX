@@ -45,7 +45,8 @@ def cumulative_distance(points):
     distances = np.linalg.norm(np.diff(points, axis=0), axis=1)
     # Compute the cumulative sum, adding an initial zero for the first point
     return np.concatenate(([0], np.cumsum(distances)))
-    
+
+
 def calculate_tilt_psi_angles(v):
     """
     Calculate the ZYZ Euler angles (Rot, Tilt, Psi) for a vector v.
@@ -159,20 +160,14 @@ def calculate_rot_angles_simple(rotated_cross_section):
     Seems to be good with polarity 0 as well
     """
     updated_cross_section = rotated_cross_section
-    rot_angles = []
-    n = len(rotated_cross_section)
-    for i in range(n):
-        prev_idx, next_idx = (i - 1) % n, (i + 1) % n
-        x_prev, y_prev = rotated_cross_section.iloc[prev_idx][['rlnCoordinateX', 'rlnCoordinateY']]
-        x_next, y_next = rotated_cross_section.iloc[next_idx][['rlnCoordinateX', 'rlnCoordinateY']]
-        delta_x, delta_y = x_next - x_prev, y_next - y_prev
-        rot = np.degrees(np.arctan2(delta_y, delta_x)) - 180
-        rot_angles.append(rot)
-    
-    updated_cross_section['rlnAngleRot'] = rot_angles
-    updated_cross_section['rlnAngleRot'] = updated_cross_section['rlnAngleRot'].apply(normalize_angle) 
-    #print(updated_cross_section['rlnAngleRot'])
+    rot_angles = np.zeros(len(rotated_cross_section))
+    coords = rotated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].values
+    for i in range(len(rotated_cross_section)):
+        delta_x, delta_y = coords[(i + 1) % len(rotated_cross_section)] - coords[(i - 1) % len(rotated_cross_section)]
+        rot_angles[i] = np.degrees(np.arctan2(delta_y, delta_x)) - 180
+    updated_cross_section['rlnAngleRot'] = np.vectorize(normalize_angle)(rot_angles)
     return updated_cross_section
+    
     
 def calculate_rot_angles_ellipse(rotated_cross_section):
     """ 

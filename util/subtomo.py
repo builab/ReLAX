@@ -8,9 +8,7 @@ Apparently, in the mrcfile reading, z is the first dimension. So z, y, x.
 import mrcfile
 import starfile
 import numpy as np
-from scipy.ndimage import rotate, affine_transform
-
-from scipy import ndimage
+from scipy.ndimage import rotate, affine_transform, ndimage
 from scipy.fft import fftn, ifftn, fftshift, ifftshift
 
 
@@ -44,11 +42,8 @@ def extract_subtomograms(tomogram_path, centers, size_d):
     with mrcfile.open(tomogram_path) as mrc:
         # Get the tomogram data
         tomogram = mrc.data
-        dim_z = len(tomogram)
-        dim_y = len(tomogram[0])
-        dim_x = len(tomogram[0][0])
+        dim_z, dim_y, dim_x = tomogram.shape
         print(f"Tomogram dimension: {dim_x}, {dim_y}, {dim_z}")
-        #print(tomogram.shape)
         
         subtomograms = []
         
@@ -70,11 +65,8 @@ def extract_subtomograms(tomogram_path, centers, size_d):
             y_end = min(tomogram.shape[1], center_y + half_y + (size_y % 2))
             z_end = min(tomogram.shape[0], center_z + half_z + (size_z % 2))
             
-            #print(f"{x_end}, {y_end}, {z_end}")
-            
             # Extract the subtomogram
             subtomo = tomogram[z_start:z_end, y_start:y_end, x_start:x_end]
-            
             
             # Handle edge case where subtomogram is smaller than requested size
             # (if center is near the edge of the tomogram)
@@ -504,18 +496,15 @@ def filter_mrc_file(mrc_path, output_path, resolution_in_Angstrom, pixel_size_in
     None
     """
     with mrcfile.open(mrc_path) as mrc:
-        data = mrc.data
-        
+        data = mrc.data   
         # Check if it's a 3D volume or a 2D slice
         if len(data.shape) == 3:
             filtered_data = low_pass_3D(data, resolution_in_Angstrom, pixel_size_in_Angstrom, filter_edge_width)
         else:
             filtered_data = low_pass_2D(data, resolution_in_Angstrom, pixel_size_in_Angstrom, filter_edge_width)
-        
         # Create a new MRC file with the filtered data
         with mrcfile.new(output_path, overwrite=True) as new_mrc:
             new_mrc.set_data(filtered_data.astype(np.float32))
-            
             # Copy header information
             if hasattr(mrc, 'header'):
                 header_dict = {k: getattr(mrc.header, k) for k in mrc.header._array_fields}
@@ -552,10 +541,8 @@ def write_subtomograms_to_mrc(subtomograms, file_prefix='subtomogram_', dtype='f
     for i, subtomo in enumerate(subtomograms):
         # Construct the output filename
         output_filename = f"{file_prefix}{i}.mrc"
-        
         # Convert the subtomogram to the specified dtype
-        subtomo_converted = subtomo.astype(np_dtype)
-        
+        subtomo_converted = subtomo.astype(np_dtype)     
         # Save the subtomogram as an .mrc file
         with mrcfile.new(output_filename, overwrite=True) as mrc:
             mrc.set_data(subtomo_converted)
