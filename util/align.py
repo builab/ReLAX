@@ -88,7 +88,7 @@ def calculate_cross_correlation(img1, img2):
     cc = np.sum(img1_norm * img2_norm)
     return cc
 
-def align_images(image, reference, angle_range=(-180, 180), angle_step=1):
+def align_images_legacy(image, reference, angle_range=(-180, 180), angle_step=1):
     """
     Align a 2D image with a reference by testing different rotation angles
     and determining the optimal translation.
@@ -143,8 +143,74 @@ def align_images(image, reference, angle_range=(-180, 180), angle_step=1):
             best_aligned = shifted.copy()
     
     return best_angle, best_shift[1], best_shift[0], best_cc, best_aligned
+    
+def align_images(image, reference, angle_range=(-180, 180), angle_step=1, max_shift_x=30, max_shift_y=30):
+    """
+    Align a 2D image with a reference by testing different rotation angles
+    and determining the optimal translation, with limits on shift values.
+    
+    Parameters:
+    -----------
+    image : numpy.ndarray
+        Image to be aligned
+    reference : numpy.ndarray
+        Reference image
+    angle_range : tuple
+        Range of rotation angles to try (min, max)
+    angle_step : float
+        Step size for angle testing
+    max_shift_x : int
+        Maximum allowed shift in x direction (pixels)
+    max_shift_y : int
+        Maximum allowed shift in y direction (pixels)
+        
+    Returns:
+    --------
+    best_angle : float
+        Optimal rotation angle
+    shift_y, shift_x : float
+        Optimal translation in y and x directions
+    best_cc : float
+        Cross-correlation coefficient at the optimal alignment
+    aligned_image : numpy.ndarray
+        The aligned image
+    """
+    best_cc = -np.inf
+    best_angle = 0
+    best_shift = (0, 0)
+    best_aligned = None
+    
+    angles = np.arange(angle_range[0], angle_range[1], angle_step)
+    
+    for angle in angles:
+        # Rotate the image
+        rotated = rotate(image, angle, preserve_range=True, mode='constant')
+        
+        # Find the shift using phase correlation
+        shift, error, diffphase = phase_cross_correlation(reference, rotated)
+        
+        # Limit the shift values to the specified maximum
+        shift_y, shift_x = shift
+        shift_y = np.clip(shift_y, -max_shift_y, max_shift_y)
+        shift_x = np.clip(shift_x, -max_shift_x, max_shift_x)
+        limited_shift = (shift_y, shift_x)
+        
+        # Apply the limited shift
+        shifted = ndimage.shift(rotated, limited_shift)
+        
+        # Calculate cross-correlation
+        cc = calculate_cross_correlation(shifted, reference)
+        
+        # Update best alignment if better correlation found
+        if cc > best_cc:
+            best_cc = cc
+            best_angle = angle
+            best_shift = limited_shift
+            best_aligned = shifted.copy()
+    
+    return best_angle, best_shift[1], best_shift[0], best_cc, best_aligned
 
-def align_image_stack_with_refs(image_stack, reference_stack, angle_range=(-180, 180), angle_step=1):
+def align_image_stack_with_refs(image_stack, reference_stack, angle_range=(-180, 180), angle_step=1, max_shift_x=30, max_shift_y=30):
     """
     Align each image in a stack with each reference in a reference stack.
     
@@ -186,7 +252,7 @@ def align_image_stack_with_refs(image_stack, reference_stack, angle_range=(-180,
             
             # Align image with reference
             angle, shift_x, shift_y, cc, aligned_image = align_images(
-                image, reference, angle_range, angle_step
+                image, reference, angle_range, angle_step, max_shift_x, max_shift_y
             )
             
             # Store results
@@ -213,6 +279,7 @@ def main():
     parser.add_argument('--angle-range', type=float, nargs=2, default=(-180, 180),
                         help='Range of rotation angles to try (min max)')
     parser.add_argument('--angle-step', type=float, default=1, help='Step size for testing rotation angles')
+    parser.add_argument('--max-shift', type=int, default=20, help='Maximum shift in pixels')
     parser.add_argument('--save-aligned', action='store_true', help='Save all aligned images')
     
     args = parser.parse_args()
@@ -228,7 +295,7 @@ def main():
     
     # Align images
     results, aligned_images = align_image_stack_with_refs(
-        image_stack, reference_stack, args.angle_range, args.angle_step
+        image_stack, reference_stack, args.angle_range, args.angle_step, args.max_shift, args.max_shift
     )
     
     # Save results to CSV
@@ -258,9 +325,6 @@ def main():
             best_aligned_stack.append(aligned_images[(img_id, ref_id)])
             
     # Save the average of all the aligned image
-
-
-    
     if best_aligned_stack:
         best_aligned_stack = np.array(best_aligned_stack)
         best_aligned_path = os.path.join(args.output_dir, "best_aligned.mrcs")

@@ -2,6 +2,7 @@
 """
 relax_rotate_volume.py - A program to rotate MRC volumes using Euler angles in ZYZ convention
 with a single interpolation step, respecting MRC axis convention.
+Rotate clockwise = positive
 Tested to be the same as Relion convention
 Intentionally written with duplicate function as util.subtomo so it can function as a standalone.
 """

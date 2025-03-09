@@ -10,6 +10,8 @@ import numpy as np
 import os
 from typing import List, Dict, Union, Tuple, Optional
 
+from util.imod import run_model2point, run_point2model, get_obj_ids_from_model, scale_imod_model
+
 from util.geom import (
     interpolate_spline, 
     calculate_tilt_psi_angles, 
@@ -29,70 +31,6 @@ def create_dir(directory):
         print(f"Directory created: {directory}")
     except FileExistsError:
         print(f"Directory already exists: {directory}")  
-
-def run_imod_command(command: List[str], input_file: str, output_file: str) -> bool:
-    """
-    Runs an IMOD command with the given input and output files.
-    
-    Args:
-        command: List of command arguments
-        input_file: Path to the input file
-        output_file: Path to the output file
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    try:
-        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error processing {input_file}: {e.stderr.decode()}")  
-        return False
-
-def run_model2point(input_mod: str, output_txt: str) -> bool:
-    """
-    Runs the IMOD model2point command with the given input and output files.
-    
-    Args:
-        input_mod: Path to the input .mod file
-        output_txt: Path to the output .txt file
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    command = ["model2point", "-Object", "-Contour", input_mod, output_txt]
-    return run_imod_command(command, input_mod, output_txt)
-        
-def run_point2model(input_txt: str, output_mod: str) -> bool:
-    """
-    Runs the IMOD point2model command with the given input and output files.
-    
-    Args:
-        input_txt: Path to the input .txt file
-        output_mod: Path to the output .mod file
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    command = ["point2model", input_txt, output_mod]
-    return run_imod_command(command, input_txt, output_mod)
-
-def get_obj_ids_from_model(model_file):
-    """
-    Get the obj_id in the IMOD model file
-    Args:
-        model_file: Path to the input .mod file
-    
-    Returns:
-        obj_ids: returns a set object containing unique id    
-    """
-    input_txt = model_file.replace(".mod", ".txt")
-    run_model2point(model_file, input_txt)
-    # Extract tomogram name
-    with open(input_txt, "r") as file:
-        lines = [list(map(float, line.strip().split())) for line in file]
-    obj_list = [row[0] for row in lines]
-    return set(obj_list)
     
     
 def get_filament_ids_from_object(cilia_object, obj_id):

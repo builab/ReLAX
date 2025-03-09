@@ -43,7 +43,8 @@ def main():
     parser.add_argument('--angle-range', type=float, nargs=2, default=(-180, 180),
                         help='Range of rotation angles to try (min max)')
     parser.add_argument('--angle-step', type=float, default=1, help='Step size for testing rotation angles')
-    
+    parser.add_argument('--max-shift', type=int, default=30, help='Maximum shift in X and Y')
+   
     # Parse arguments
     args = parser.parse_args()
     box_size = args.box_size
@@ -58,8 +59,6 @@ def main():
     print(f'Box size: {box_size} pixels')
     print(f'Z slices number to average: {z_slices}')
     print(f'Low pass filter: {lowpass} Angstrom')
-
-
 
     # Reading the reference
     reference_stack = load_mrc(args.ref, is_stack=True)
@@ -122,7 +121,7 @@ def main():
         # Align images
         print(f'Aligning {out_stack_file} with reference {args.ref}')
         results, aligned_stack = align_image_stack_with_refs(
-            combined_stack, reference_stack, args.angle_range, args.angle_step
+            combined_stack, reference_stack, args.angle_range, args.angle_step, args.max_shift, args.max_shift
         )
         results_df = pd.DataFrame(results)
         #print(results_df['ImageID'].apply(type))
