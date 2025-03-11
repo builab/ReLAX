@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from scipy.linalg import eig, inv, lstsq
 from scipy.optimize import leastsq, minimize
 from scipy.interpolate import splprep, splev
-
+import warnings
 
 """
 The X, Y, Z should be calculated using unbinned pixel
@@ -19,6 +19,167 @@ def normalize_angle(angle):
     Normalize angle to range -180 to 180 in Relion
     """
     return (angle + 180) % 360 - 180
+    
+
+def robust_interpolate_spline(points, angpix, spacing):
+    """
+    Interpolate points along a line with a specified spacing using splines.
+    Includes robust handling of edge cases like too few points, collinear points, etc.
+    
+    Parameters:
+    -----------
+    points : array-like
+        List of (x, y, z) coordinate points to fit a spline through
+    angpix : float
+        Angstroms per pixel conversion factor
+    spacing : float
+        Desired spacing between interpolated points in Angstroms
+        
+    Returns:
+    --------
+    interpolated_pts : numpy.ndarray
+        Array of interpolated points at the specified spacing
+    cum_distances_angst : numpy.ndarray
+        Cumulative distances along the path in Angstroms
+    """
+    points = np.array(points)
+    
+    # Check if points are valid
+    if points.size == 0 or points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("Input must be a non-empty list of 3D points with shape (n, 3)")
+    
+    # Handle the case with very few points
+    n_points = points.shape[0]
+    if n_points == 1:
+        # Only one point - can't create a spline, return the point and zero distance
+        return points, np.array([0.0])
+    
+    # Check for non-finite values
+    if not np.all(np.isfinite(points)):
+        raise ValueError("Input contains NaN or Inf values")
+    
+    # Check for duplicate points and remove them if found
+    _, unique_indices = np.unique(points, axis=0, return_index=True)
+    unique_indices = np.sort(unique_indices)  # Keep original order
+    if len(unique_indices) < n_points:
+        points = points[unique_indices]
+        n_points = len(points)
+        if n_points == 1:
+            # After removing duplicates, only one point remains
+            return points, np.array([0.0])
+    
+    # Determine appropriate spline order based on number of points
+    if n_points < 4:
+        k = 1  # Linear spline for 2-3 points
+    else:
+        k = 3  # Cubic spline when enough points are available
+    
+    # Check for collinearity if we have enough points
+    if n_points >= 3 and k > 1:
+        # Calculate vectors between consecutive points
+        vectors = np.diff(points, axis=0)
+        # Normalize vectors
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        valid_vectors = norms > 1e-10
+        
+        if np.all(valid_vectors):
+            unit_vectors = vectors / np.where(norms > 1e-10, norms, 1.0)
+            # Check if all unit vectors are nearly parallel
+            dot_products = np.abs(np.sum(unit_vectors[:-1] * unit_vectors[1:], axis=1))
+            if np.all(dot_products > 0.999):
+                k = 1  # Use linear spline for collinear points
+    
+    # Helper function for cumulative distance
+    def cumulative_distance(pts):
+        """Calculate cumulative distance along a path of points"""
+        diffs = np.diff(pts, axis=0)
+        distances = np.sqrt(np.sum(diffs**2, axis=1))
+        cum_dist = np.zeros(len(pts))
+        cum_dist[1:] = np.cumsum(distances)
+        return cum_dist
+    
+    # Try to fit the spline with multiple fallback options
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            tck, _ = splprep(points.T, s=0, k=k)
+    except Exception as e1:
+        try:
+            # First fallback: try with some smoothing
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                tck, _ = splprep(points.T, s=1.0, k=k)
+        except Exception as e2:
+            try:
+                # Second fallback: try with linear interpolation
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    tck, _ = splprep(points.T, s=0, k=1)
+            except Exception as e3:
+                # Last resort: use direct linear interpolation without splines
+                # Create a parametric representation based on cumulative distance
+                cum_dist = cumulative_distance(points)
+                total_dist = cum_dist[-1]
+                if total_dist == 0:
+                    return points, np.array([0.0])
+                
+                # Normalize distances to [0, 1]
+                normalized_dist = cum_dist / total_dist
+                
+                # Create dense samples
+                dense_distances = np.linspace(0, 1, max(int(n_points * 100), 1000))
+                
+                # Interpolate each coordinate
+                dense_points = np.zeros((len(dense_distances), 3))
+                for i in range(3):
+                    dense_points[:, i] = np.interp(dense_distances, normalized_dist, points[:, i])
+                
+                # Calculate distances and resample
+                dense_cum_dist = cumulative_distance(dense_points * angpix)
+                resampled_distances = np.arange(0, dense_cum_dist[-1], spacing)
+                
+                # Interpolate at equally spaced intervals
+                interpolated_pts = np.zeros((len(resampled_distances), 3))
+                for i in range(3):
+                    interpolated_pts[:, i] = np.interp(resampled_distances, dense_cum_dist, dense_points[:, i])
+                
+                cum_distances_angst = np.arange(0, dense_cum_dist[-1], spacing)
+                if len(cum_distances_angst) != len(interpolated_pts):
+                    cum_distances_angst = np.linspace(0, dense_cum_dist[-1], len(interpolated_pts))
+                
+                return interpolated_pts, cum_distances_angst
+    
+    # Calculate dense samples along the spline
+    num_dense_samples = max(int(n_points * 100), 1000)  # At least 1000 samples
+    distances = np.linspace(0, 1, num_dense_samples)
+    
+    # Evaluate the spline at dense samples
+    dense_points = np.array(splev(distances, tck)).T
+    
+    # Calculate cumulative distances
+    cum_distances_all = cumulative_distance(dense_points * angpix)
+    
+    # Check if the total distance is zero or very small
+    if cum_distances_all[-1] < spacing * 0.1:
+        # Path is too short, return the original points
+        return points, cumulative_distance(points * angpix)
+    
+    # Resample at equal intervals
+    resampled_distances = np.arange(0, cum_distances_all[-1], spacing)
+    
+    # Interpolate at equally spaced intervals
+    interpolated_pts = np.zeros((len(resampled_distances), 3))
+    for i in range(3):
+        interpolated_pts[:, i] = np.interp(resampled_distances, cum_distances_all, dense_points[:, i])
+    
+    # Calculate final cumulative distances
+    cum_distances_angst = np.arange(0, cum_distances_all[-1], spacing)
+    
+    # Ensure the length matches (in case of numerical issues)
+    if len(cum_distances_angst) != len(interpolated_pts):
+        cum_distances_angst = np.linspace(0, cum_distances_all[-1], len(interpolated_pts))
+    
+    return interpolated_pts, cum_distances_angst
     
 def interpolate_spline(points, angpix, spacing):
     """

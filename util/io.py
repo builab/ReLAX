@@ -11,6 +11,7 @@ import starfile
 
 from util.imod import run_model2point, run_point2model, get_obj_ids_from_model, scale_imod_model
 from util.geom import (
+    robust_interpolate_spline, 
     interpolate_spline, 
     calculate_tilt_psi_angles, 
     process_cross_section, 
@@ -124,7 +125,8 @@ def process_imod_point_file(
             points = filament_group[["X", "Y", "Z"]].values
             if polarity == 1:
                 points = np.flipud(points)
-            interpolated_pts, cum_distances_angst = interpolate_spline(points, tomo_angpix, spacing)
+            interpolated_pts, cum_distances_angst = robust_interpolate_spline(points, tomo_angpix, spacing)
+            #interpolated_pts, cum_distances_angst = interpolate_spline(points, tomo_angpix, spacing)
             
             for i in range(len(interpolated_pts) - 1):
                 vector = interpolated_pts[i + 1] - interpolated_pts[i]
