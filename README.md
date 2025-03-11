@@ -1,4 +1,4 @@
-# ReLAX: RELion Workflow for AXONEME
+# RelAX: RELion Workflow for AXONEME
 
 ReLAX is a workflow designed to perform subtomogram averaging of the axoneme. It originates from the Axoneme Align tool developed by Huy Bui in the lab of Dr. Takashi Ichikawa at the Paul Scherer Institute, Switzerland. ReLAX leverages modern image analysis software, RELION, to facilitate high-resolution structural analysis of the axoneme.
 
