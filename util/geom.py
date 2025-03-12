@@ -410,7 +410,7 @@ def propagate_rot_to_entire_cilia(cross_section, original_data):
 
 def plot_ellipse_cs(cross_section, output_png):
     """
-    Plotting the cross section
+    Plotting the cross section. The fitting is still not robust yet.
     """
     points = cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
     x = points[:, 0]
