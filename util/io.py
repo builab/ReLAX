@@ -208,17 +208,17 @@ def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str, angpix
         clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
         return clean_df
     elif star_format == 'relion5':
-    	clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
+        clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
         clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
         xyz = df_particles[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].to_numpy()
         # From Alister Burt
         volume_center = np.array(tomo_size) / 2 # replace with x/y/z dims of your tomogram
-		xyz_centered = xyz - volume_center
-		xyz_centered_angstroms = xyz_centered * angpix
-		clean_df[['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst']] = xyz_centered_angstroms
-		return clean_df.drop(columns=['rlnCoordinateX, 'rlnCoordinateY', 'rlnCoordinateZ'])
+        xyz_centered = xyz - volume_center
+        xyz_centered_angstroms = xyz_centered * angpix
+        clean_df[['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst']] = xyz_centered_angstroms
+        return clean_df.drop(columns=['rlnCoordinateX, 'rlnCoordinateY', 'rlnCoordinateZ'])
     else:
-    	print('Unrecognized format. Star file format supported: \'relion5\' and \'warp\' only')
+        print('Unrecognized format. Star file format supported: \'relion5\' and \'warp\' only')
 
 def process_object_data(
     obj_data: pd.DataFrame, 
