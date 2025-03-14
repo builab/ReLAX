@@ -75,7 +75,7 @@ def main():
         filename = os.path.basename(input_file)
         tomo_name = filename.removesuffix(args.mod_suffix + ".mod")
         output_star_file = os.path.join(output_dir, tomo_name + ".star")
-        print(f'-----> Processing {filename} <-----')
+        print(f'-----> Process {filename} <-----')
         df_cilia = imod2star(input_file, output_star_file, angpix, tomo_angpix, spacing, fit_method, df_polarity, args.mod_suffix, reorder)
         for i, obj_data in enumerate(df_cilia):
             df_particles.append(obj_data)

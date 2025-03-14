@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from scipy.linalg import eig, inv, lstsq
 from scipy.optimize import leastsq, minimize
 from scipy.interpolate import splprep, splev
-import warnings
+
 
 """
 The X, Y, Z should be calculated using unbinned pixel
@@ -20,7 +20,6 @@ def normalize_angle(angle):
     """
     return (angle + 180) % 360 - 180
     
-
 def robust_interpolate_spline(points, angpix, spacing):
     """
     Interpolate points along a line with a specified spacing using splines.
@@ -180,6 +179,7 @@ def robust_interpolate_spline(points, angpix, spacing):
         cum_distances_angst = np.linspace(0, cum_distances_all[-1], len(interpolated_pts))
     
     return interpolated_pts, cum_distances_angst
+    
     
 def interpolate_spline(points, angpix, spacing):
     """
@@ -410,7 +410,7 @@ def propagate_rot_to_entire_cilia(cross_section, original_data):
 
 def plot_ellipse_cs(cross_section, output_png):
     """
-    Plotting the cross section. The fitting is still not robust yet.
+    Plotting the cross section
     """
     points = cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
     x = points[:, 0]
@@ -418,11 +418,20 @@ def plot_ellipse_cs(cross_section, output_png):
 
     # Fit an ellipse to these points
     ellipse_params = fit_ellipse(x, y, axis_handle=None)
+    print('After ellipse fit')
+    print(ellipse_params)
+    
+    # ERROR CHECK
+    if ellipse_params['a'] is None or ellipse_params['b'] is None:
+        print("WARNING: Ellipse fitting failed.")
+        
+        
     center = [ellipse_params['X0'], ellipse_params['Y0']]
     axes = [ellipse_params['a'], ellipse_params['b']]
     angle = ellipse_params['phi']
 
     elliptical_distortion = ellipse_params['a']/ellipse_params['b']
+
     fitted_ellipse_pts = ellipse_points(center, axes, angle)
 
     # Order the original points along the ellipse:
@@ -461,6 +470,11 @@ def fit_ellipse(x, y, axis_handle=None):
     # Ensure inputs are numpy arrays
     x = np.asarray(x).flatten()
     y = np.asarray(y).flatten()
+    
+    # ERROR CHECK
+    if len(x) < 5:
+    	print("WARNING: Not enough points to fit an ellipse!")
+
 
     # Remove bias (mean) to improve numerical stability
     mean_x, mean_y = np.mean(x), np.mean(y)

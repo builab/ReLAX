@@ -12,13 +12,13 @@ import starfile
 from util.imod import run_model2point, run_point2model, get_obj_ids_from_model, scale_imod_model
 from util.geom import (
     robust_interpolate_spline, 
-    interpolate_spline, 
     calculate_tilt_psi_angles, 
     process_cross_section, 
     rotate_cross_section, 
     calculate_rot_angles, 
     propagate_rot_to_entire_cilia, 
     plot_ellipse_cs,
+    fit_ellipse,
     renumber_filament_ids,
     get_filament_order_from_rot
 )
@@ -126,7 +126,6 @@ def process_imod_point_file(
             if polarity == 1:
                 points = np.flipud(points)
             interpolated_pts, cum_distances_angst = robust_interpolate_spline(points, tomo_angpix, spacing)
-            #interpolated_pts, cum_distances_angst = interpolate_spline(points, tomo_angpix, spacing)
             
             for i in range(len(interpolated_pts) - 1):
                 vector = interpolated_pts[i + 1] - interpolated_pts[i]
@@ -226,11 +225,21 @@ def process_object_data(
     Returns:
         DataFrame with processed data.
     """
+    
     cross_section = process_cross_section(obj_data)
     rotated_cross_section = rotate_cross_section(cross_section)
     
     output_cs = output_star_file.replace(".star", f"_Cilia{obj_idx + 1}.png")
-    plot_ellipse_cs(rotated_cross_section, output_cs)
+
+    #ellipse_params = fit_ellipse(rotated_cross_section['rlnCoordinateX'], rotated_cross_section['rlnCoordinateY'])
+    
+    # ERROR CHECK
+    #if ellipse_params['a'] is None or ellipse_params['b'] is None:
+    #    print(f"WARNING: Ellipse fitting failed for object {obj_idx}. Skipping plot.")
+    #else:
+    #    plot_ellipse_cs(rotated_cross_section, output_cs)
+   
+    # plot_ellipse_cs(rotated_cross_section, output_cs)    
     
     updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
     df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)
