@@ -30,6 +30,8 @@ def main():
     parser.add_argument("--reorder", action="store_true", help="Reorder filament using ellipse fit with correct polarity")
     parser.add_argument("--mod_suffix", type=str, default="", help="Suffix of IMOD models without .mod")
     parser.add_argument("--star_format", type=str, default="relion5", help="Suffix of IMOD models without .mod")
+    parser.add_argument("--tomo_size", type=lambda s: tuple(map(int, s.split(','))), default=(1023, 1440, 500), 
+                    help="Size of the tomogram generated as 'x,y,z'")
     parser.add_argument("--write_particles", action="store_true", help="Write particles.star file if this flag is set")
 
     # Parse arguments
@@ -49,6 +51,8 @@ def main():
     print(f'Pixel size of original tomogram: {tomo_angpix} Angstrom')
     print(f'Fitting method: {fit_method}')
     print(f'Reorder doublet: {reorder}')
+    print(f'Default tomo Size: {args.tomo_size}')
+
     if reorder and fit_method != 'ellipse':
         print('Reorder only available with ellipse fitting')
     print(f'Repeating unit to interpolate: {spacing} Angstrom')
@@ -82,7 +86,7 @@ def main():
 
     if args.write_particles:
         print('----- Writing combined particle file -----')
-        create_starfile(sanitize_particles_star(pd.concat(df_particles, ignore_index=True), args.star_format), 'particles.star')
+        create_starfile(sanitize_particles_star(pd.concat(df_particles, ignore_index=True), args.star_format, angpix, args.tomo_size), 'particles.star')
 
 if __name__ == "__main__":
     main()

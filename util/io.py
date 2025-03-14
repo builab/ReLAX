@@ -191,7 +191,7 @@ def read_starfile_into_cilia_object(input_star_file: str) -> List:
     star_data = starfile.read(input_star_file)
     return [star_data]
 
-def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str) -> pd.DataFrame:
+def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str, angpix: float, tomo_size: tuple) -> pd.DataFrame:
     """
     Drop unnecessary columns and add necessary columns for df_particles before writing.
     Args:
@@ -200,12 +200,25 @@ def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str) -> pd.
     Returns:
         DataFrame with cleaned/prepared particle data.
     Note:
-        NOT YET FULLY IMPLEMENTED
     """
     clean_df = df_particles.drop(columns=["rlnTomoParticleId", "rlnAnglePsiProbability"])
-    clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
-    clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
-    return clean_df
+    
+    if star_format == 'warp':
+        clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
+        clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
+        return clean_df
+    elif star_format == 'relion5':
+    	clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
+        clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
+        xyz = df_particles[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].to_numpy()
+        # From Alister Burt
+        volume_center = np.array(tomo_size) / 2 # replace with x/y/z dims of your tomogram
+		xyz_centered = xyz - volume_center
+		xyz_centered_angstroms = xyz_centered * angpix
+		clean_df[['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst']] = xyz_centered_angstroms
+		return clean_df.drop(columns=['rlnCoordinateX, 'rlnCoordinateY', 'rlnCoordinateZ'])
+    else:
+    	print('Unrecognized format. Star file format supported: \'relion5\' and \'warp\' only')
 
 def process_object_data(
     obj_data: pd.DataFrame, 
