@@ -216,7 +216,7 @@ def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str, angpix
         xyz_centered = xyz - volume_center
         xyz_centered_angstroms = xyz_centered * angpix
         clean_df[['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst']] = xyz_centered_angstroms
-        return clean_df.drop(columns=['rlnCoordinateX, 'rlnCoordinateY', 'rlnCoordinateZ'])
+        return clean_df.drop(columns=['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ'])
     else:
         print('Unrecognized format. Star file format supported: \'relion5\' and \'warp\' only')
 
