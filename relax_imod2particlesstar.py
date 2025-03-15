@@ -79,7 +79,7 @@ def main():
         filename = os.path.basename(input_file)
         tomo_name = filename.removesuffix(args.mod_suffix + ".mod")
         output_star_file = os.path.join(output_dir, tomo_name + ".star")
-        print(f'-----> Process {filename} <-----')
+        print(f'-----> Processing {filename} <-----')
         df_cilia = imod2star(input_file, output_star_file, angpix, tomo_angpix, spacing, fit_method, df_polarity, args.mod_suffix, reorder)
         for i, obj_data in enumerate(df_cilia):
             df_particles.append(obj_data)
@@ -87,6 +87,7 @@ def main():
     if args.write_particles:
         print('----- Writing combined particle file -----')
         create_starfile(sanitize_particles_star(pd.concat(df_particles, ignore_index=True), args.star_format, angpix, args.tomo_size), 'particles.star')
+    
 
 if __name__ == "__main__":
     main()

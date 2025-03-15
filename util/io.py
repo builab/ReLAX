@@ -3,6 +3,7 @@ IO package for ReLAX
 Written by Molly Yu & Huy Bui, McGill 
 """
 
+import matplotlib.pyplot as plt
 import os
 from typing import List, Dict, Union, Tuple, Optional
 import pandas as pd
@@ -20,7 +21,11 @@ from util.geom import (
     plot_ellipse_cs,
     fit_ellipse,
     renumber_filament_ids,
-    get_filament_order_from_rot
+    get_filament_order_from_rot,
+    find_best_circular_paths,
+    plot_paths,
+    polygon_signed_area,
+    plot_cs
 )
 
 def create_dir(directory: str) -> None:
@@ -201,24 +206,40 @@ def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str, angpix
         DataFrame with cleaned/prepared particle data.
     Note:
     """
-    clean_df = df_particles.drop(columns=["rlnTomoParticleId", "rlnAnglePsiProbability"])
-    
+    clean_df = df_particles.drop(columns=["rlnTomoParticleId", "rlnAnglePsiProbability"], errors='ignore')
+
     if star_format == 'warp':
         clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
         clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
+        clean_df = df.drop(columns=['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst'], errors='ignore')
         return clean_df
     elif star_format == 'relion5':
         clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
         clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
-        xyz = df_particles[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].to_numpy()
-        # From Alister Burt
-        volume_center = np.array(tomo_size) / 2 # replace with x/y/z dims of your tomogram
-        xyz_centered = xyz - volume_center
-        xyz_centered_angstroms = xyz_centered * angpix
-        clean_df[['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst']] = xyz_centered_angstroms
+        clean_df = warp2relion5(clean_df, angpix, tomo_size)
         return clean_df.drop(columns=['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ'])
     else:
-        print('Unrecognized format. Star file format supported: \'relion5\' and \'warp\' only')
+        print('Unrecognized or unsupported format. Star file format supported: \'relion5\' and \'warp\' only')
+
+def warp2relion5(df_particles, angpix, tomo_size):
+    """ Add column to warp star to relion5. Copy from Alister Burt
+    """
+    xyz = df_particles[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].to_numpy()
+    volume_center = np.array(tomo_size) / 2 # replace with x/y/z dims of your tomogram
+    xyz_centered = xyz - volume_center
+    xyz_centered_angstroms = xyz_centered * angpix
+    df_particles[['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst']] = xyz_centered_angstroms
+    return df_particles
+    
+def relion2warp(df_particles, angpix, tomo_size):
+    """ Add columns to relion5 star to warp
+    """
+    volume_center = np.array(tomo_size) / 2 # replace with x/y/z dims of your tomogram
+    xyz_centered_angstroms = df_particles[['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst']].to_numpy() 
+    xyz_centered = xyz_centered_angstroms / angpix
+    xyz = xyz_centered + volume_center
+    df_particles[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']] = xyz
+    return df_particles
 
 def process_object_data(
     obj_data: pd.DataFrame, 
@@ -240,6 +261,8 @@ def process_object_data(
     """
     
     cross_section = process_cross_section(obj_data)
+    create_starfile([cross_section], output_star_file.replace('.star', '_cs.star'))
+
     rotated_cross_section = rotate_cross_section(cross_section)
     
     output_cs = output_star_file.replace(".star", f"_Cilia{obj_idx + 1}.png")
@@ -255,15 +278,27 @@ def process_object_data(
     # plot_ellipse_cs(rotated_cross_section, output_cs)    
     
     updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
-    df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)
+    #print(updated_cross_section)
+    df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)  # Redundancy?
     
-    if fit_method == 'ellipse' and reorder:
-        print('Reorder the doublet number')
-        sorted_filament_ids = get_filament_order_from_rot(updated_cross_section)
-        print(sorted_filament_ids)
-        df_star = renumber_filament_ids(df_star, sorted_filament_ids)
+    #if fit_method == 'ellipse' or reorder:
+    #    print('Reorder the doublet number')
+    #    sorted_filament_ids = get_filament_order_from_rot(updated_cross_section)
+    #    print(sorted_filament_ids)
+    #    df_star = renumber_filament_ids(df_star, sorted_filament_ids)
+    #return df_star
     
-    return df_star
+    # UPDATE 
+    points = updated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].values
+    
+    best_paths = find_best_circular_paths(points)
+    print(best_paths)
+    
+    #plot_paths(points, best_paths)
+    df, cross_section = renumber_filament_ids(obj_data, best_paths, updated_cross_section)
+    plot_cs(cross_section, output_cs)
+    
+    return df
 
 def imod2star(
     input_file: str, 
@@ -299,3 +334,18 @@ def imod2star(
     
     create_starfile(new_objects, output_star_file)
     return new_objects
+    
+def make_common_star(df_particles, angpix, tomo_size):
+    """Script to add column in relion5 and warp format"""
+    # Check if star_file is relion5 or warp
+    if 'rlnCoordinateX' in df_particles.columns:
+        star_format = 'warp'
+    elif 'rlnCenteredCoordinateXAngst' in df_particles.columns:
+        star_format = 'relion5'
+    print(f'Star file format is {star_format}')
+    
+    if star_format == 'warp':
+        return warp2relion5(df_particles, angpix, )
+    elif star_format == 'relion5':
+        return relion2warp(df_particles, angpix, tomo_size)
+    

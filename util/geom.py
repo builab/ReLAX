@@ -9,11 +9,10 @@ import matplotlib.pyplot as plt
 from scipy.linalg import eig, inv, lstsq
 from scipy.optimize import leastsq, minimize
 from scipy.interpolate import splprep, splev
+import itertools
+import warnings
 
 
-"""
-The X, Y, Z should be calculated using unbinned pixel
-"""
 def normalize_angle(angle):
     """
     Normalize angle to range -180 to 180 in Relion
@@ -207,7 +206,6 @@ def cumulative_distance(points):
     # Compute the cumulative sum, adding an initial zero for the first point
     return np.concatenate(([0], np.cumsum(distances)))
 
-
 def calculate_tilt_psi_angles(v):
     """
     Calculate the ZYZ Euler angles (Rot, Tilt, Psi) for a vector v.
@@ -231,13 +229,12 @@ def calculate_perpendicular_distance(point, plane_normal, reference_point):
 def find_cross_section_points(data, plane_normal, reference_point):
     """
     Find the points on each filament closest to the cross-sectional plane,
-    add 90 degrees to the Psi angle, and return them.
     """
     cross_section = []
     grouped_data = data.groupby('rlnHelicalTubeID')
     for filament_id, group in grouped_data:
         points = group[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
-        distances = np.linalg.norm(np.cross(plane_normal, points - reference_point), axis=1) / np.linalg.norm(plane_normal)
+        distances = np.array([calculate_perpendicular_distance(point, plane_normal, reference_point) for point in points])
         closest_point = group.iloc[np.argmin(distances)]
         cross_section.append(closest_point)
     return pd.DataFrame(cross_section, columns=data.columns)
@@ -254,13 +251,16 @@ def find_shortest_filament(data):
 
 def calculate_normal_vector(filament_points):
     vectors = np.diff(filament_points, axis=0)
+    #print(vectors)
     normal_vector = np.sum(vectors, axis=0)
     return normal_vector / np.linalg.norm(normal_vector)
 
 def process_cross_section(data):
     """ Even if the cross section doesn't have every filament, it can still project it from the shorter filament """
     shortest_filament_id, shortest_midpoint = find_shortest_filament(data)
+    print(f"{shortest_filament_id}, {shortest_midpoint}")
     filament_points = data[data['rlnHelicalTubeID'] == shortest_filament_id][['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
+    #print(filament_points)
     normal_vector = calculate_normal_vector(filament_points)
     plane_normal, plane_point = define_plane(normal_vector, shortest_midpoint)
     return find_cross_section_points(data, plane_normal, plane_point)
@@ -271,6 +271,7 @@ def rotate_cross_section(cross_section):
     """
     rotated_cross_section = cross_section
     psi = 90 - cross_section['rlnAnglePsi'].median()
+    #psi = -90 + cross_section['rlnAnglePsi'].median()
     tilt = cross_section['rlnAngleTilt'].median()
     
     for index, row in rotated_cross_section.iterrows():
@@ -285,7 +286,7 @@ def rotate_cross_section(cross_section):
         ])
         rotated_point = Rz @ np.array([x, y, z])
         
-        # Rotation around X-axis by Tilt
+        # Rotation around Y-axis by Tilt
         tilt_rad = np.radians(tilt)
         Ry = np.array([
             [1, 0,              0             ],
@@ -379,8 +380,72 @@ def get_filament_order_from_rot(rotated_cross_section):
     # Extract the 'rlnHelicalTubeID' values in the new order
     sorted_filament_ids = sorted_df['rlnHelicalTubeID'].tolist()
     return sorted_filament_ids
+    
+# UPDATE: Sorting based on shortest filament length and return sorted filament ids like previously
 
-def renumber_filament_ids(df, sorted_filament_ids):
+def path_length(points, path):
+    """Compute the total length of a given path."""
+    return sum(np.linalg.norm(points[path[i]] - points[path[i-1]]) for i in range(len(path)))
+
+def polygon_signed_area(points, path):
+    """Compute the signed area of the polygon formed by the path to determine its orientation."""
+    area = 0
+    for i in range(len(path)):
+        x1, y1 = points[path[i]]
+        x2, y2 = points[path[(i+1) % len(path)]]
+        area += (x2 - x1) * (y2 + y1)
+    return area  # Negative area means clockwise
+
+def find_best_circular_paths(points, top_n=1):
+    """Find the top N shortest clockwise circular paths for a given set of points."""
+    n = len(points)
+    indices = list(range(n))
+    best_paths = []
+    
+    # Try all permutations, fixing the first point to avoid redundancy
+    for perm in itertools.permutations(indices[1:]):
+        path = [indices[0]] + list(perm)  # Start from a fixed point
+        length = path_length(points, path + [path[0]])  # Complete the cycle
+        area = polygon_signed_area(points, path)  # Determine path orientation
+        
+        if area < 0:  # Only keep clockwise paths
+            best_paths.append((length, path))
+    
+    # Sort by path length
+    best_paths.sort(key=lambda x: x[0])
+    return best_paths[:top_n]
+    
+def plot_paths(points, paths, output_file=None):
+    """Plot the top clockwise paths.
+    
+    Args:
+        points (list or np.array): List of points to plot.
+        paths (list): List of tuples containing (length, path).
+        output_file (str, optional): If provided, saves the plot to this file instead of showing it.
+    """
+    fig, axes = plt.subplots(1, len(paths), figsize=(5 * len(paths), 5))
+    if len(paths) == 1:
+        axes = [axes]
+    
+    for ax, (length, path) in zip(axes, paths):
+        ordered_points = np.array([points[i] for i in path + [path[0]]])
+        ax.plot(ordered_points[:, 0], ordered_points[:, 1], 'bo-', markersize=8)
+        
+        for i, idx in enumerate(path):
+            x, y = points[idx]
+            ax.text(x, y, str(i), fontsize=12, ha='right', color='red')
+        
+        ax.set_title(f"Path Length: {length:.2f}")
+    
+    # Save or show the plot
+    if output_file is not None:
+        plt.savefig(output_file)  # Save the plot to the specified file
+        plt.close()  # Close the figure to free up memory
+    else:
+        plt.show()  # Display the plot
+
+
+def renumber_filament_ids(df, best_paths, updated_cross_section):  # Testing cross section sorting
     """
     Renumber the 'rlnHelicalTubeID' column in the DataFrame based on the new order.
     
@@ -391,68 +456,161 @@ def renumber_filament_ids(df, sorted_filament_ids):
     Returns:
         pd.DataFrame: DataFrame with renumbered 'rlnHelicalTubeID'.
     """
+    # UPDATE
+    sorted_filament_ids = best_paths[0][1]
+    sorted_filament_ids = [x + 1 for x in sorted_filament_ids]
+    print(sorted_filament_ids)
+    
     # Create a mapping from the original IDs to the new order
-    id_mapping = {original_id: new_id for new_id, original_id in enumerate(sorted_filament_ids, start=1)}
+    id_mapping = {new_id + 1: original_id for new_id, original_id in enumerate(sorted_filament_ids, start=0)}
+    print("ID Mapping:", id_mapping)
+    updated_cross_section['rlnHelicalTubeID'] = updated_cross_section['rlnHelicalTubeID'].map(id_mapping)
+    #print("Updated Cross Section with Renumbered Filament IDs:", updated_cross_section)
     
-    # Apply the mapping to the 'rlnHelicalTubeID' column
     df['rlnHelicalTubeID'] = df['rlnHelicalTubeID'].map(id_mapping)
+    #print("DataFrame with Renumbered Filament IDs:", df)
     
-    return df
+    return df, updated_cross_section
     
+
 def propagate_rot_to_entire_cilia(cross_section, original_data):
     # Create mappings for adjusted values
     rot_mapping = cross_section.set_index('rlnHelicalTubeID')['rlnAngleRot'].to_dict()
 
-    # Propagate the values to the entire original dataset
+    # Propagate the values to the entire original datasetcr
     original_data['rlnAngleRot'] = original_data['rlnHelicalTubeID'].map(rot_mapping)
     
     return original_data
+    
+def plot_cs(cross_section, output_png=None):
+    """Plot the cross section with points and circular connecting lines.
+    
+    Args:
+        cross_section (pd.DataFrame): DataFrame containing columns 'rlnCoordinateX', 'rlnCoordinateY', and 'rlnHelicalTubeID'.
+        output_png (str, optional): If provided, saves the plot to this file instead of showing it.
+        The 'rlnCoordinateX/Y/Z' should be in nm for absolute plot
+        
+    Returns:
+        plt: The matplotlib.pyplot object for further customization.
+    """
+    # Reset the index to ensure it's a simple integer range
+    cross_section = cross_section.reset_index(drop=True)
+    plt.figure(figsize=(10, 6))
+
+    # Scatter plot for X vs Y
+    scatter = plt.scatter(cross_section['rlnCoordinateX'], cross_section['rlnCoordinateY'], 
+                          c=cross_section['rlnHelicalTubeID'], cmap='viridis', s=100, edgecolors='k')
+
+    # Plot circular lines connecting the points
+    x_coords = cross_section['rlnCoordinateX'].tolist()
+    y_coords = cross_section['rlnCoordinateY'].tolist()
+    
+    # Add the first point at the end to close the loop
+    x_coords.append(x_coords[0])
+    y_coords.append(y_coords[0])
+    
+    plt.plot(x_coords, y_coords, 'k-', alpha=0.5)
+
+    # Annotate the points with the filament IDs (rlnHelicalTubeID)
+    for i in range(len(cross_section)):
+        plt.annotate(cross_section['rlnHelicalTubeID'][i], 
+                     (cross_section['rlnCoordinateX'][i], cross_section['rlnCoordinateY'][i]),
+                     textcoords="offset points", xytext=(0, 10), ha='center', fontsize=9)
+
+    # Set labels and title
+    plt.xlabel('X (nm)')
+    plt.ylabel('Y (nm)')
+    plt.title('Filament Plot: X vs Y with Filament IDs and Circular Connecting Lines')
+    
+    # Add a color bar to show the filament ID
+    plt.colorbar(scatter, label='Filament ID')
+
+    # Add a grid
+    plt.grid(True)
+
+    # Save or show the plot
+    if output_png is not None:
+        plt.savefig(output_png)  # Save the plot to the specified file
+        plt.close()  # Close the figure to free up memory
+    else:
+        return plt  # Return the plt object for further customization
+        
 
 def plot_ellipse_cs(cross_section, output_png):
     """
-    Plotting the cross section
+    Plotting the cross section with ellipse fitting.
+    
+    Args:
+        cross_section (pd.DataFrame): DataFrame containing columns 'rlnCoordinateX' and 'rlnCoordinateY'.
+        output_png (str): Path to save the output plot.
+        
+    Returns:
+        elliptical_distortion (float): Estimated elliptical distortion, or -1 if ellipse fitting fails.
     """
     points = cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
     x = points[:, 0]
     y = points[:, 1]
 
-    # Fit an ellipse to these points
-    ellipse_params = fit_ellipse(x, y, axis_handle=None)
-    print('After ellipse fit')
-    print(ellipse_params)
+    try:
+        # Fit an ellipse to these points
+        ellipse_params = fit_ellipse(x, y, axis_handle=None)
+        print('After ellipse fit')
+        print(ellipse_params)
+        
+        # Check if ellipse parameters are valid
+        if ellipse_params['a'] is None or ellipse_params['b'] is None:
+            raise ValueError("Ellipse fitting failed: Invalid parameters.")
+        
+        # Extract ellipse parameters
+        center = [ellipse_params['X0'], ellipse_params['Y0']]
+        axes = [ellipse_params['a'], ellipse_params['b']]
+        angle = ellipse_params['phi']
+        
+        # Calculate elliptical distortion
+        elliptical_distortion = ellipse_params['a'] / ellipse_params['b']
+        
+        # Generate points for the fitted ellipse
+        fitted_ellipse_pts = ellipse_points(center, axes, angle)
+        
+        # Order the original points along the ellipse
+        angles = angle_along_ellipse(center, axes, angle, points)
+        angles = angles / np.pi * 180
+        
+        # Create the base plot using plot_cs
+        plt = plot_cs(cross_section)
+        
+        # Add the fitted ellipse to the plot
+        plt.plot(fitted_ellipse_pts[0], fitted_ellipse_pts[1], 'r--', label='Fitted Ellipse')
+        
+        # Add text annotation for elliptical distortion
+        plt.text(np.mean(x), np.mean(y), f"Elliptical distortion: {elliptical_distortion:.2f}", 
+                 fontsize=9, ha='center', va='center')
+        
+        # Add legend and adjust plot
+        plt.legend()
+        plt.xlabel('X (nm)')
+        plt.ylabel('Y (nm)')
+        plt.title("Ellipse Fit of Cross section")
+        plt.axis('equal')
+        
+        # Save the plot
+        plt.savefig(output_png, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        return elliptical_distortion
     
-    # ERROR CHECK
-    if ellipse_params['a'] is None or ellipse_params['b'] is None:
-        print("WARNING: Ellipse fitting failed.")
+    except Exception as e:
+        # Handle ellipse fitting errors
+        print(f"WARNING: {e}")
         
+        # Create the base plot using plot_cs
+        plt = plot_cs(cross_section)
         
-    center = [ellipse_params['X0'], ellipse_params['Y0']]
-    axes = [ellipse_params['a'], ellipse_params['b']]
-    angle = ellipse_params['phi']
-
-    elliptical_distortion = ellipse_params['a']/ellipse_params['b']
-
-    fitted_ellipse_pts = ellipse_points(center, axes, angle)
-
-    # Order the original points along the ellipse:
-    angles = angle_along_ellipse(center, axes, angle, points)
-    angles = angles/np.pi*180
-
-    # Plotting the results
-    plt.figure(figsize=(8, 6))
-    plt.plot(fitted_ellipse_pts[0], fitted_ellipse_pts[1], 'r--', label='Fitted Ellipse')
-    plt.scatter(x, y, c='b', label='Doublet Number')
-    for i, pt in enumerate(points):
-        plt.text(x[i]+0.5, y[i]+0.5, str(i), fontsize=10)
+        # Save the plot without the ellipse
+        plt.savefig(output_png, dpi=300, bbox_inches='tight')
+        plt.close()
         
-    plt.text(np.mean(x), np.mean(y), f"Elliptical distortion: {elliptical_distortion:.2f}", fontsize=9, ha='center', va='center')
-    plt.legend()
-    plt.xlabel("X")
-    plt.ylabel("Y")
-    plt.title("Ellipse Fit of Cross section")
-    plt.axis('equal')
-    plt.savefig(output_png, dpi=300, bbox_inches='tight')
-    plt.close()
+        return -1  # Return -1 to indicate failure
 
 def fit_ellipse(x, y, axis_handle=None):
     """
@@ -613,4 +771,3 @@ def angle_along_ellipse(center, axes, angle, points):
         t_rot_list.append(t_rot)
     
     return np.array(t_rot_list)
-
