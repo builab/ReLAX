@@ -3,7 +3,7 @@
 # Fut
 # Using Ellipse Fitting
 
-from util.io import create_dir, create_starfile, process_cross_section
+from util.io import create_dir, process_cross_section, make_common_star
 from util.geom import  plot_ellipse_cs, rotate_cross_section
 import argparse
 import numpy as np
