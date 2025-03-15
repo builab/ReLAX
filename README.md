@@ -7,7 +7,7 @@ Our goal is to create an open-source software package that accelerates discoveri
 
 ## Features
 - **Subtomogram Averaging**: Automated workflow for axoneme structure determination.
-- **Integration with RELION & WarpTool **: Utilizes modern cryo-EM tools for high-resolution analysis.
+- **Integration with RELION & WarpTool**: Utilizes modern cryo-EM tools for high-resolution analysis.
 - **Open-Source Development**: Encourages community contributions and improvements.
 
 ## Installation
