@@ -74,6 +74,10 @@ def main():
     # Use glob to find all files matching the pattern
     matching_files = glob.glob(pattern)
     
+    if not matching_files:
+        print(f"No files found matching the pattern: {args.mod_suffix} in directory {input_dir}")
+        sys.exit(1)  # Exit the program with a non-zero status code
+    
     df_particles = []
     for input_file in matching_files:
         filename = os.path.basename(input_file)
