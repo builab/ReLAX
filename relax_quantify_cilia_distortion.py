@@ -21,9 +21,9 @@ def main():
     parser.add_argument("--input_star", type=str, required=True, help="Path to the particle star file")
     parser.add_argument("--output_dir", type=str, default="graph", help="Output graph file directory")
     parser.add_argument("--angpix", type=float, default=8.48, help="Pixel size in Angstroms (default: 8.48)")
-    parser.add_argument("--star_format", type=str, default="relion5", help="Suffix of IMOD models without .mod")
     parser.add_argument("--tomo_size", type=lambda s: tuple(map(int, s.split(','))), default=(1023, 1440, 500), 
                     help="Size of the tomogram generated as 'x,y,z'")
+    #parser.add_argument("--star_format", type=str, default="relion5", help="Suffix of IMOD models without .mod")
                     
     print('Ignore the Relion5 format for now')
     
@@ -36,7 +36,7 @@ def main():
     print(f'Input file: {args.input_star}')
     print(f'Pixel size of file: {args.angpix} Angstrom')
     print(f'Output graph dir: \"{args.output_dir}\"')
-    print(f'Star file format: {args.star_format}')
+    #print(f'Star file format: {args.star_format}')
     print(f'Elliptical Distortion List: {out_csv}')
 
 
@@ -46,13 +46,13 @@ def main():
     # Check if it is the one with optics group or not
     # For now, just have no optics group
     # Convert from Relion format to warp format
-    # Taking care of with & without rlnOriginX,Y,Z
+    df_particles = make_common_star(df_particles, args.angpix, args.tomo_size)
     
-    # Densify the star file (guess the polarity based on Psi angle)
+    # Densify the star file (Check if < certain number) or never have to)
     
     
     bins = [0, 10, 20, 30]  # Define the bin edges
-    labels = ['1', '2', '3']  # Define the labels for the bins
+    labels = ['1', '2', '3']  # Define the labels for the bins, Perhaps not more than 4 cilia ever?
     df_particles['HelicalTubeID_Range'] = pd.cut(df_particles['rlnHelicalTubeID'], bins=bins, labels=labels)
 
     grouped = df_particles.groupby(['rlnTomoName', 'HelicalTubeID_Range'])
