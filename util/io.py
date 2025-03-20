@@ -211,8 +211,7 @@ def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str, angpix
     if star_format == 'warp':
         clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
         clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
-        clean_df = df.drop(columns=['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst'], errors='ignore')
-        return clean_df
+        return clean_df.drop(columns=['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst'], errors='ignore')
     elif star_format == 'relion5':
         clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
         clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
