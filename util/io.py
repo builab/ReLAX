@@ -220,6 +220,7 @@ def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str, angpix
     else:
         print('Unrecognized or unsupported format. Star file format supported: \'relion5\' and \'warp\' only')
 
+# 20250331
 def warp2relion5(df_particles, angpix, tomo_size):
     """ Add column to warp star to relion5. Copy from Alister Burt
     """
@@ -228,6 +229,8 @@ def warp2relion5(df_particles, angpix, tomo_size):
     xyz_centered = xyz - volume_center
     xyz_centered_angstroms = xyz_centered * angpix
     df_particles[['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst']] = xyz_centered_angstroms
+    # Remove .tomostar
+    df_particles['rlnTomoName'] = df_particles['rlnTomoName'].str.replace(r'\.tomostar$', '', regex=True)
     return df_particles
     
 def relion2warp(df_particles, angpix, tomo_size):
@@ -238,8 +241,92 @@ def relion2warp(df_particles, angpix, tomo_size):
     xyz_centered = xyz_centered_angstroms / angpix
     xyz = xyz_centered + volume_center
     df_particles[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']] = xyz
+    # Add .tomostar
+    df_particles['rlnTomoName'] = df_particles['rlnTomoName'].str.replace(
+        r'^(.*)(?<!\.tomostar)$',  # Pattern: "PREFIX_DIGITS" (no .tomostar)
+        r'\1.tomostar',                          # Appends .tomostar if needed
+        regex=True
+    )
     return df_particles
-
+     
+def create_data_optics(
+    df_particles,
+    tomo_angpix,
+    angpix,
+    Cs=2.7,
+    voltage=300,
+    ctf_premulti=1,
+    img_dim=2,
+    img_size=128,
+    amp_contrast=0.07,
+):
+    """
+    Read df_particles and parameters
+    Return df_optics in Relion 5 format
+    """
+    # Get unique sorted rlnTomoName values and assign OpticsGroup numbers
+    unique_tomo_names = sorted(df_particles["rlnTomoName"].unique())
+    
+    # Create df_optics with rlnOpticsGroup as index (starting from 1)
+    df_optics = pd.DataFrame(
+        {
+            "rlnOpticsGroup": range(1, len(unique_tomo_names) + 1),
+            "rlnOpticsGroupName": [f"OpticsGroup{i}" for i in range(1, len(unique_tomo_names) + 1],
+            "rlnSphericalAberration": Cs,
+            "rlnVoltage": voltage,
+            "rlnTomoTiltSeriesPixelSize": tomo_angpix,
+            "rlnCtfDataAreCtfPremultiplied": ctf_premulti,
+            "rlnImageDimensionality": img_dim,
+            "rlnTomoSubtomogramBinning": angpix / tomo_angpix,
+            "rlnImagePixelSize": angpix,
+            "rlnImageSize": img_size,
+            "rlnAmplitudeContrast": amp_contrast,
+        }
+    ).set_index("rlnOpticsGroup")
+    
+    return df_optics
+    
+def create_particles_starfile(df_optics, df_particles, output_star_file: str) -> None:
+    """
+    Write particles star file compatible with multi table
+    """
+    # Check if any optics group has 2D images
+    if (df_optics["rlnImageDimensionality"] == 2).any():
+        df_general = pd.DataFrame({"rlnTomoSubTomosAre2DStacks": [1]})
+    else:
+        df_general = pd.DataFrame()  # Empty if no 2D groups
+    
+    starfile.write(
+        {'general': df_general, 'optics': df_optics, 'particles': df_particles}, output_star_file
+    )
+    
+def add_particle_names(df_particles):
+    """
+    Adds column 'rlnTomoParticleName' with format: 
+    - '{tomo_name}/1', '{tomo_name}/2', ... (if only 1 tomogram)
+    - '{tomo_name}/1', '{tomo_name}/2', ... per tomogram (if multiple tomograms).
+    Removes '.tomostar' from tomogram names if present.
+    """
+    # Remove '.tomostar' from rlnTomoName (if present)
+    clean_tomo_name = df_particles['rlnTomoName'].str.replace(r'\.tomostar$', '', regex=True)
+    
+    # Case 1: Only 1 unique tomogram (assign sequential numbers)
+    if len(clean_tomo_name.unique()) == 1:
+        df_particles['rlnTomoParticleName'] = (
+            clean_tomo_name + '/' + (df_particles.index + 1).astype(str)
+        )
+    
+    # Case 2: Multiple tomograms (group and number particles per tomogram)
+    else:
+        df_particles['rlnTomoParticleName'] = (
+            clean_tomo_name + '/' + 
+            (df_particles.groupby(clean_tomo_name).cumcount() + 1).astype(str)
+        )
+    
+    return df_particles
+    
+# End 20250331
+    
 def process_object_data(
     obj_data: pd.DataFrame, 
     output_star_file: str, 
@@ -273,31 +360,33 @@ def process_object_data(
     #    print(f"WARNING: Ellipse fitting failed for object {obj_idx}. Skipping plot.")
     #else:
     #    plot_ellipse_cs(rotated_cross_section, output_cs)
-   
+    ellipse_params = fit_ellipse(rotated_cross_section['rlnCoordinateX'], rotated_cross_section['rlnCoordinateY'])   
     # plot_ellipse_cs(rotated_cross_section, output_cs)    
     
     updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
-    #print(updated_cross_section)
-    df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)  # Redundancy?
+    sorted_filament_ids = get_filament_order_from_rot(updated_cross_section)
     
-    #if fit_method == 'ellipse' or reorder:
-    #    print('Reorder the doublet number')
-    #    sorted_filament_ids = get_filament_order_from_rot(updated_cross_section)
-    #    print(sorted_filament_ids)
-    #    df_star = renumber_filament_ids(df_star, sorted_filament_ids)
-    #return df_star
+    if ellipse_params['a'] is None or ellipse_params['b'] is None:
+        print(f"WARNING: Ellipse fitting failed for object {obj_idx}. Skipping plot.")
+    else:
+        plot_ellipse_cs(rotated_cross_section, output_cs)  # creates the PLOT
     
-    # UPDATE 
-    points = updated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].values
+    print("CS: ", updated_cross_section)
+    df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)  
     
-    best_paths = find_best_circular_paths(points)
-    print(best_paths)
-    
-    #plot_paths(points, best_paths)
-    df, cross_section = renumber_filament_ids(obj_data, best_paths, updated_cross_section)
-    plot_cs(cross_section, output_cs)
-    
-    return df
+    if fit_method == 'ellipse' :
+        print('Reorder the doublet number: ', sorted_filament_ids)
+        df_ellipse = renumber_filament_ids(df_star, sorted_filament_ids, updated_cross_section)
+        #print("df_ellipse")
+        #print(df_ellipse)
+        return df_ellipse
+    	
+    else: 
+        points = updated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].values
+        best_paths = find_best_circular_paths(points)
+        print(best_paths)
+        print(df_star)
+        return df_star
 
 def imod2star(
     input_file: str, 
@@ -344,7 +433,7 @@ def make_common_star(df_particles, angpix, tomo_size):
     print(f'Star file format is {star_format}')
     
     if star_format == 'warp':
-        return warp2relion5(df_particles, angpix, )
+        return warp2relion5(df_particles, angpix, tomo_size)
     elif star_format == 'relion5':
         return relion2warp(df_particles, angpix, tomo_size)
     

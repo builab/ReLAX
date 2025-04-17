@@ -78,6 +78,7 @@ def main():
         print(f"No files found matching the pattern: {args.mod_suffix} in directory {input_dir}")
         sys.exit(1)  # Exit the program with a non-zero status code
     
+    # 20250331
     df_particles = []
     for input_file in matching_files:
         filename = os.path.basename(input_file)
@@ -90,8 +91,17 @@ def main():
 
     if args.write_particles:
         print('----- Writing combined particle file -----')
-        create_starfile(sanitize_particles_star(pd.concat(df_particles, ignore_index=True), args.star_format, angpix, args.tomo_size), 'particles.star')
+        df_all_particles = sanitize_particles_star(pd.concat(df_particles, ignore_index=True), args.star_format, angpix, args.tomo_size)
+        df_all_particles = add_particle_names(df_all_particles)
+        df_optics = create_data_optics(
+            df_particles=df_all_particles,
+            tomo_angpix,  # Tilt series pixel size (Å)
+            angpix,       # Subtomogram pixel size (Å)
+            Cs=2.7,            # Spherical aberration (mm)
+            voltage=300,       # Microscope voltage (kV)
+        )        
+        create_particles_starfile(df_optics, df_all_particles, 'particles.star')
+    #END 20250331
     
-
 if __name__ == "__main__":
     main()
