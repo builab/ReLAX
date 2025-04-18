@@ -304,17 +304,20 @@ def rotate_cross_section(cross_section):
     
 def calculate_rot_angles(rotated_cross_section, fit_method):
     """ Calculate the rotation angle in a cross section """    
-    if fit_method == 'simple':
-        updated_cross_section = calculate_rot_angles_simple(rotated_cross_section)
-    elif fit_method == 'ellipse':
-        # Fitting using ellipse requires at least 5 points
-        updated_cross_section = calculate_rot_angles_ellipse(rotated_cross_section)
-    else:
-        print("Unknown option. Using simple method")
-        updated_cross_section = calculate_rot_angle_simple(rotated_cross_section)
-    
-    return updated_cross_section 
-       
+    fit_dispatch = {
+        'simple': calculate_rot_angles_simple,
+        'ellipse': calculate_rot_angles_ellipse,
+        # add more methods here if needed
+    }
+
+    func = fit_dispatch.get(fit_method)
+
+    if func is None:
+        print(f"Unknown fit_method '{fit_method}'. Falling back to 'simple'.")
+        func = calculate_rot_angles_simple
+
+    return func(rotated_cross_section)
+           
 def calculate_rot_angles_simple(rotated_cross_section):
     """ 
     Calculate the rotation angle in a cross section
@@ -367,12 +370,20 @@ def calculate_rot_angles_ellipse(rotated_cross_section):
     updated_cross_section['rlnAngleRot'] = updated_cross_section['rlnAngleRot'].apply(normalize_angle) 
     #print(updated_cross_section['rlnAngleRot'])
     return updated_cross_section
+    
+def get_filament_order(cs, fit_method):
+    """
+    Wrapper function to calculate the filament_order
+    """
+    if fit_method == 'ellipse':
+        return get_filament_order_from_rot(cs)
+    else:
+        return get_filament_order_from_length(cs)
+
  
 def get_filament_order_from_rot(rotated_cross_section):
     """
-    Reorder the doublet number
-    Perhaps include new column with old & new number.
-    Not working yet
+    Reorder the doublet number using ellipse method
     """
     # Sort the DataFrame by 'rlnAngleRot' in decreasing order
     sorted_df = rotated_cross_section.sort_values(by='rlnAngleRot', ascending=False)
@@ -382,6 +393,17 @@ def get_filament_order_from_rot(rotated_cross_section):
     return sorted_filament_ids
     
 # UPDATE: Sorting based on shortest filament length and return sorted filament ids like previously
+def get_filament_order_from_length(rotated_cross_section):
+    """
+    Reorder the doublet number using length method
+    """
+    points = rotated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].values
+    best_paths = find_best_circular_paths(points)
+
+    # Extract the 'rlnHelicalTubeID' values in the new order
+    sorted_filament_ids = best_paths[0][1]
+    sorted_filament_ids = [x + 1 for x in sorted_filament_ids]  # Renumber filament IDs
+    return sorted_filament_ids
 
 def path_length(points, path):
     """Compute the total length of a given path."""
@@ -445,7 +467,7 @@ def plot_paths(points, paths, output_file=None):
         plt.show()  # Display the plot
 
 
-def renumber_filament_ids(df, best_paths, updated_cross_section):  # Testing cross section sorting
+def renumber_filament_ids(df, sorted_filament_ids, updated_cross_section):  # Testing cross section sorting
     """
     Renumber the 'rlnHelicalTubeID' column in the DataFrame based on the new order.
     
@@ -456,17 +478,7 @@ def renumber_filament_ids(df, best_paths, updated_cross_section):  # Testing cro
     Returns:
         pd.DataFrame: DataFrame with renumbered 'rlnHelicalTubeID'.
     """
-    # UPDATE!!!
-    # Check if best_paths is a list of tuples (length, path)
-    if isinstance(best_paths[0], tuple):
-        # Extract the best path (the second element of the tuple is the sorted filament IDs)
-        sorted_filament_ids = best_paths[0][1]  # Extract the filament order from the first path
-        sorted_filament_ids = [x + 1 for x in sorted_filament_ids]  # Renumber filament IDs
-        print("Sorted Filament IDs (from paths):", sorted_filament_ids)
-    else:
-        # If best_paths is just a list of filament IDs (from get_filament_order_from_rot)
-        sorted_filament_ids = best_paths
-        print("Sorted Filament IDs (from rotation):", sorted_filament_ids)
+    print("Sorted Filament IDs (from rotation):", sorted_filament_ids)
     
     # Create a mapping from the original IDs to the new order
     id_mapping = {original_id: new_id + 1 for new_id, original_id in enumerate(sorted_filament_ids, start=0)}

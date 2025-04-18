@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Script to convert IMOD star file to Relion 5 star file
-# Testing now with 2 cilia
+# Not yet testing now with 2 cilia
 # Authors: Molly & HB, 02/2025
 # python ~/Documents/GitHub/ReLAX/relax_imod2star.py --i input_mod --o particles.star --tomo_angpix 3.37 --angpix 14.00 --mod_suffix _14.00Apx_doublets.mod --fit ellipse
 # NOTE: a & b axis might be reversed
 
-from util.io import create_dir, create_starfile, imod2star, read_polarity_csv, sanitize_particles_star
+from util.io import create_dir, create_starfile, create_particles_starfile, imod2star, read_polarity_csv, sanitize_particles_star, add_particle_names, create_data_optics
 
 import argparse
 import numpy as np
@@ -95,13 +95,12 @@ def main():
         df_all_particles = add_particle_names(df_all_particles)
         df_optics = create_data_optics(
             df_particles=df_all_particles,
-            tomo_angpix,  # Tilt series pixel size (Å)
-            angpix,       # Subtomogram pixel size (Å)
+            tomo_angpix=tomo_angpix,  # Tilt series pixel size (Å)
+            angpix=angpix,       # Subtomogram pixel size (Å)
             Cs=2.7,            # Spherical aberration (mm)
-            voltage=300,       # Microscope voltage (kV)
-        )        
+            voltage=300       # Microscope voltage (kV)
+        )
         create_particles_starfile(df_optics, df_all_particles, 'particles.star')
-    #END 20250331
     
 if __name__ == "__main__":
     main()

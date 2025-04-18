@@ -21,10 +21,7 @@ from util.geom import (
     plot_ellipse_cs,
     fit_ellipse,
     renumber_filament_ids,
-    get_filament_order_from_rot,
-    find_best_circular_paths,
-    plot_paths,
-    polygon_signed_area,
+    get_filament_order,
     plot_cs
 )
 
@@ -258,7 +255,7 @@ def create_data_optics(
     ctf_premulti=1,
     img_dim=2,
     img_size=128,
-    amp_contrast=0.07,
+    amp_contrast=0.07
 ):
     """
     Read df_particles and parameters
@@ -271,7 +268,7 @@ def create_data_optics(
     df_optics = pd.DataFrame(
         {
             "rlnOpticsGroup": range(1, len(unique_tomo_names) + 1),
-            "rlnOpticsGroupName": [f"OpticsGroup{i}" for i in range(1, len(unique_tomo_names) + 1],
+            "rlnOpticsGroupName": [f"OpticsGroup{i}" for i in range(1, len(unique_tomo_names) + 1)],
             "rlnSphericalAberration": Cs,
             "rlnVoltage": voltage,
             "rlnTomoTiltSeriesPixelSize": tomo_angpix,
@@ -280,9 +277,10 @@ def create_data_optics(
             "rlnTomoSubtomogramBinning": angpix / tomo_angpix,
             "rlnImagePixelSize": angpix,
             "rlnImageSize": img_size,
-            "rlnAmplitudeContrast": amp_contrast,
+            "rlnAmplitudeContrast": amp_contrast
         }
     ).set_index("rlnOpticsGroup")
+
     
     return df_optics
     
@@ -325,7 +323,6 @@ def add_particle_names(df_particles):
     
     return df_particles
     
-# End 20250331
     
 def process_object_data(
     obj_data: pd.DataFrame, 
@@ -350,35 +347,27 @@ def process_object_data(
     create_starfile([cross_section], output_star_file.replace('.star', '_cs.star'))
 
     rotated_cross_section = rotate_cross_section(cross_section)
-    
-    output_cs = output_star_file.replace(".star", f"_Cilia{obj_idx + 1}.png")
-
-    ellipse_params = fit_ellipse(rotated_cross_section['rlnCoordinateX'], rotated_cross_section['rlnCoordinateY'])   
-    
     updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
-    sorted_filament_ids = get_filament_order_from_rot(updated_cross_section)
-    
+
+    # Drawing path
+    output_cs = output_star_file.replace(".star", f"_Cilia{obj_idx + 1}.png") 
+    ellipse_params = fit_ellipse(rotated_cross_section['rlnCoordinateX'], rotated_cross_section['rlnCoordinateY'])       
     if ellipse_params['a'] is None or ellipse_params['b'] is None:
         print(f"WARNING: Ellipse fitting failed for object {obj_idx}. Skipping plot.")
     else:
         plot_ellipse_cs(rotated_cross_section, output_cs)  # creates the PLOT
     
-    print("CS: ", updated_cross_section)
     df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)  
     
-    if fit_method == 'ellipse' :
+    sorted_filament_ids = get_filament_order(updated_cross_section, fit_method)
+        
+    if reorder:
         print('Reorder the doublet number: ', sorted_filament_ids)
-        df_ellipse = renumber_filament_ids(df_star, sorted_filament_ids, updated_cross_section)
-        #print("df_ellipse")
-        #print(df_ellipse)
-        return df_ellipse
-    	
-    else: 
-        points = updated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].values
-        best_paths = find_best_circular_paths(points)
-        print(best_paths)
-        print(df_star)
-        return df_star
+        df_sorted, sorted_cross_section = renumber_filament_ids(df_star, sorted_filament_ids, updated_cross_section)
+        return df_sorted
+    
+    return df_star
+
 
 def imod2star(
     input_file: str, 
