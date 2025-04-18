@@ -456,21 +456,30 @@ def renumber_filament_ids(df, best_paths, updated_cross_section):  # Testing cro
     Returns:
         pd.DataFrame: DataFrame with renumbered 'rlnHelicalTubeID'.
     """
-    # UPDATE
-    sorted_filament_ids = best_paths[0][1]
-    sorted_filament_ids = [x + 1 for x in sorted_filament_ids]
-    print(sorted_filament_ids)
+    # UPDATE!!!
+    # Check if best_paths is a list of tuples (length, path)
+    if isinstance(best_paths[0], tuple):
+        # Extract the best path (the second element of the tuple is the sorted filament IDs)
+        sorted_filament_ids = best_paths[0][1]  # Extract the filament order from the first path
+        sorted_filament_ids = [x + 1 for x in sorted_filament_ids]  # Renumber filament IDs
+        print("Sorted Filament IDs (from paths):", sorted_filament_ids)
+    else:
+        # If best_paths is just a list of filament IDs (from get_filament_order_from_rot)
+        sorted_filament_ids = best_paths
+        print("Sorted Filament IDs (from rotation):", sorted_filament_ids)
     
     # Create a mapping from the original IDs to the new order
-    id_mapping = {new_id + 1: original_id for new_id, original_id in enumerate(sorted_filament_ids, start=0)}
+    id_mapping = {original_id: new_id + 1 for new_id, original_id in enumerate(sorted_filament_ids, start=0)}
     print("ID Mapping:", id_mapping)
+    
+    # Map the 'rlnHelicalTubeID' in both df and updated_cross_section using the mapping
     updated_cross_section['rlnHelicalTubeID'] = updated_cross_section['rlnHelicalTubeID'].map(id_mapping)
-    #print("Updated Cross Section with Renumbered Filament IDs:", updated_cross_section)
-    
     df['rlnHelicalTubeID'] = df['rlnHelicalTubeID'].map(id_mapping)
-    #print("DataFrame with Renumbered Filament IDs:", df)
     
+    print("RENUMBER: ", updated_cross_section)
+    print("COMPLETE DF: ", df)
     return df, updated_cross_section
+    
     
 
 def propagate_rot_to_entire_cilia(cross_section, original_data):

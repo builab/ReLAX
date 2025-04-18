@@ -353,15 +353,7 @@ def process_object_data(
     
     output_cs = output_star_file.replace(".star", f"_Cilia{obj_idx + 1}.png")
 
-    #ellipse_params = fit_ellipse(rotated_cross_section['rlnCoordinateX'], rotated_cross_section['rlnCoordinateY'])
-    
-    # ERROR CHECK
-    #if ellipse_params['a'] is None or ellipse_params['b'] is None:
-    #    print(f"WARNING: Ellipse fitting failed for object {obj_idx}. Skipping plot.")
-    #else:
-    #    plot_ellipse_cs(rotated_cross_section, output_cs)
     ellipse_params = fit_ellipse(rotated_cross_section['rlnCoordinateX'], rotated_cross_section['rlnCoordinateY'])   
-    # plot_ellipse_cs(rotated_cross_section, output_cs)    
     
     updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
     sorted_filament_ids = get_filament_order_from_rot(updated_cross_section)
