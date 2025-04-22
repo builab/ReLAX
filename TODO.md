@@ -4,6 +4,7 @@
 Complete imod2star with both ellipse & simple method
 
 # NEXT
+Writing star file not correct yet
 Make the visualization, drawing vectors of angle
 Test robustness by:
 Delete 1,2 or 3 lines consecutively
