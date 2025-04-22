@@ -373,14 +373,13 @@ def calculate_rot_angles_ellipse(rotated_cross_section):
     
 def get_filament_order(cs, fit_method):
     """
-    Wrapper function to calculate the filament_order
+    Wrapper function to calculate the filament_order based on either rot (ellipse) or length (simple)
     """
     if fit_method == 'ellipse':
         return get_filament_order_from_rot(cs)
     else:
         return get_filament_order_from_length(cs)
 
- 
 def get_filament_order_from_rot(rotated_cross_section):
     """
     Reorder the doublet number using ellipse method
