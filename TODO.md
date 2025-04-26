@@ -3,8 +3,10 @@
 ## 20250417
 Complete imod2star with both ellipse & simple method
 
+## 20250426 sorted output in imod2star & write both relion5 & warp format
+
 # NEXT
-imod2star need to process data sorted
+Make installation Conda for Relax with guideline updated in README.md
 Writing star file not correct yet
 Change script? Not sort then same order to streamline the code
 Make the visualization, drawing vectors of angle

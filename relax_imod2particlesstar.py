@@ -78,8 +78,9 @@ def main():
 
     pattern = os.path.join(input_dir, f"*{args.mod_suffix}.mod")
     
-    # Use glob to find all files matching the pattern
-    matching_files = glob.glob(pattern).sort(key=str.lower)
+    # Use glob to find all files matching the pattern & sort
+    matching_files = glob.glob(pattern)
+    matching_files.sort()
     
     if not matching_files:
         print(f"No files found matching the pattern: {args.mod_suffix} in directory {input_dir}")
@@ -107,8 +108,9 @@ def main():
             Cs=2.7,            # Spherical aberration (mm)
             voltage=300       # Microscope voltage (kV)
         )
-        create_particles_starfile(df_optics, df_all_particles, 'particles.star')
-        print('particles.star successfuly written!')
+        particlesfile = f'particles_{args.star_format}.star'
+        create_particles_starfile(df_optics, df_all_particles, particlesfile)
+        print(f'{particlesfile} successfuly written!')
     
 if __name__ == "__main__":
     main()
