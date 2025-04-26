@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import starfile
 import glob
-import os
+import os, sys
 
 # main
 def main():
@@ -29,7 +29,7 @@ def main():
     parser.add_argument("--polarity", type=str, default="", help="Polarity file for angle prediction.")
     parser.add_argument("--reorder", action="store_true", help="Reorder filament using ellipse fit with correct polarity")
     parser.add_argument("--mod_suffix", type=str, default="", help="Suffix of IMOD models without .mod")
-    parser.add_argument("--star_format", type=str, default="relion5", help="Suffix of IMOD models without .mod")
+    parser.add_argument("--star_format", type=str, default="warp", help="Star file format (warp|relion5)")
     parser.add_argument("--tomo_size", type=lambda s: tuple(map(int, s.split(','))), default=(1023, 1440, 500), 
                     help="Size of the tomogram generated as 'x,y,z'")
     parser.add_argument("--write_particles", action="store_true", help="Write particles.star file if this flag is set")
@@ -52,6 +52,13 @@ def main():
     print(f'Fitting method: {fit_method}')
     print(f'Reorder doublet: {reorder}')
     print(f'Default tomo Size: {args.tomo_size}')
+    
+    if args.star_format not in ['warp', 'relion5']:
+        print(f"ERROR: Unsupported star format '{args.star_format}'. Must be 'warp' or 'relion5'.")
+        sys.exit(1)
+    
+    print(f'Particles star file format: {args.star_format}')
+
 
     if reorder and fit_method != 'ellipse':
         print('Reorder only available with ellipse fitting')
@@ -101,6 +108,7 @@ def main():
             voltage=300       # Microscope voltage (kV)
         )
         create_particles_starfile(df_optics, df_all_particles, 'particles.star')
+        print('particles.star successfuly written!')
     
 if __name__ == "__main__":
     main()

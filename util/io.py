@@ -208,6 +208,7 @@ def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str, angpix
     if star_format == 'warp':
         clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
         clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
+        clean_df['rlnTomoName'] = clean_df['rlnTomoName'] + '.tomostar'
         return clean_df.drop(columns=['rlnCenteredCoordinateXAngst', 'rlnCenteredCoordinateYAngst', 'rlnCenteredCoordinateZAngst'], errors='ignore')
     elif star_format == 'relion5':
         clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
@@ -217,7 +218,6 @@ def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str, angpix
     else:
         print('Unrecognized or unsupported format. Star file format supported: \'relion5\' and \'warp\' only')
 
-# 20250331
 def warp2relion5(df_particles, angpix, tomo_size):
     """ Add column to warp star to relion5. Copy from Alister Burt
     """

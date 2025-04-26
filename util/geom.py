@@ -258,7 +258,7 @@ def calculate_normal_vector(filament_points):
 def process_cross_section(data):
     """ Even if the cross section doesn't have every filament, it can still project it from the shorter filament """
     shortest_filament_id, shortest_midpoint = find_shortest_filament(data)
-    print(f"{shortest_filament_id}, {shortest_midpoint}")
+    #print(f"{shortest_filament_id}, {shortest_midpoint}")
     filament_points = data[data['rlnHelicalTubeID'] == shortest_filament_id][['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
     #print(filament_points)
     normal_vector = calculate_normal_vector(filament_points)
@@ -574,8 +574,8 @@ def plot_ellipse_cs(cross_section, output_png):
     try:
         # Fit an ellipse to these points
         ellipse_params = fit_ellipse(x, y, axis_handle=None)
-        print('After ellipse fit')
-        print(ellipse_params)
+        #print('After ellipse fit')
+        #print(ellipse_params)
         
         # Check if ellipse parameters are valid
         if ellipse_params['a'] is None or ellipse_params['b'] is None:
