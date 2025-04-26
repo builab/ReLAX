@@ -279,7 +279,7 @@ def create_data_optics(
             "rlnImageSize": img_size,
             "rlnAmplitudeContrast": amp_contrast
         }
-    ).set_index("rlnOpticsGroup")
+    ).set_index("rlnOpticsGroup").reset_index()
 
     print(df_optics)
     return df_optics
