@@ -59,9 +59,6 @@ def main():
     
     print(f'Particles star file format: {args.star_format}')
 
-
-    if reorder and fit_method != 'ellipse':
-        print('Reorder only available with ellipse fitting')
     print(f'Repeating unit to interpolate: {spacing} Angstrom')
     if args.polarity != "":
         print(f'Polarity file: {args.polarity} ')
