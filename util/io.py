@@ -259,10 +259,17 @@ def create_data_optics(
 ):
     """
     Read df_particles and parameters
-    Return df_optics in Relion 5 format
+    Return df_optics (Relion 5 format) and df_new_particles with assigned rlnOpticsGroup
     """
     # Get unique sorted rlnTomoName values and assign OpticsGroup numbers
     unique_tomo_names = sorted(df_particles["rlnTomoName"].unique())
+    
+    # Create a mapping from rlnTomoName to rlnOpticsGroup (starting from 1)
+    tomo_to_optics = {name: i+1 for i, name in enumerate(unique_tomo_names)}
+    
+    # Assign rlnOpticsGroup to each particle in a copy of the original DataFrame
+    df_new_particles = df_particles.copy()
+    df_new_particles["rlnOpticsGroup"] = df_new_particles["rlnTomoName"].map(tomo_to_optics)
     
     # Create df_optics with rlnOpticsGroup as index (starting from 1)
     df_optics = pd.DataFrame(
@@ -281,8 +288,7 @@ def create_data_optics(
         }
     ).set_index("rlnOpticsGroup").reset_index()
 
-    print(df_optics)
-    return df_optics
+    return df_optics, df_new_particles
     
 def create_particles_starfile(df_optics, df_particles, output_star_file: str) -> None:
     """

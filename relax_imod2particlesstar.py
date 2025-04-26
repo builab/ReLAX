@@ -98,7 +98,7 @@ def main():
         print('----- Writing combined particle file -----')
         df_all_particles = sanitize_particles_star(pd.concat(df_particles, ignore_index=True), args.star_format, angpix, args.tomo_size)
         df_all_particles = add_particle_names(df_all_particles)
-        df_optics = create_data_optics(
+        df_optics, df_all_particles_updated = create_data_optics(
             df_particles=df_all_particles,
             tomo_angpix=tomo_angpix,  # Tilt series pixel size (Å)
             angpix=angpix,       # Subtomogram pixel size (Å)
@@ -106,7 +106,7 @@ def main():
             voltage=300       # Microscope voltage (kV)
         )
         particlesfile = f'particles_{args.star_format}_{angpix:.2f}Apx.star'
-        create_particles_starfile(df_optics, df_all_particles, particlesfile)
+        create_particles_starfile(df_optics, df_all_particles_updated, particlesfile)
         print(f'{particlesfile} successfuly written!')
     
 if __name__ == "__main__":
