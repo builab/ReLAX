@@ -4,6 +4,7 @@
 Complete imod2star with both ellipse & simple method
 
 # NEXT
+imod2star need to process data sorted
 Writing star file not correct yet
 Change script? Not sort then same order to streamline the code
 Make the visualization, drawing vectors of angle

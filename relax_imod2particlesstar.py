@@ -79,7 +79,7 @@ def main():
     pattern = os.path.join(input_dir, f"*{args.mod_suffix}.mod")
     
     # Use glob to find all files matching the pattern
-    matching_files = glob.glob(pattern)
+    matching_files = glob.glob(pattern).sort(key=str.lower)
     
     if not matching_files:
         print(f"No files found matching the pattern: {args.mod_suffix} in directory {input_dir}")
