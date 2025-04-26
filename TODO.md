@@ -7,7 +7,7 @@ Complete imod2star with both ellipse & simple method
 sorted matching star files for processing in imod2star
 write star_format & Angpix in name.
 Fix rlnOpticsGroup in data_optics
-Add rlnOpticsGroup in data_particles
+Add rlnOpticsGroup in mapping data_particles
 
 # NEXT
 data_general is in two lines
