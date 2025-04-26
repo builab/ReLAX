@@ -281,7 +281,7 @@ def create_data_optics(
         }
     ).set_index("rlnOpticsGroup")
 
-    
+    print(df_optics)
     return df_optics
     
 def create_particles_starfile(df_optics, df_particles, output_star_file: str) -> None:

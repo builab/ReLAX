@@ -105,7 +105,7 @@ def main():
             Cs=2.7,            # Spherical aberration (mm)
             voltage=300       # Microscope voltage (kV)
         )
-        particlesfile = f'particles_{args.star_format}.star'
+        particlesfile = f'particles_{args.star_format}_{angpix:.2f}Apx.star'
         create_particles_starfile(df_optics, df_all_particles, particlesfile)
         print(f'{particlesfile} successfuly written!')
     
