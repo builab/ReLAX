@@ -13,19 +13,18 @@ Use dict to make data_general in 1 line
 
 
 # NEXT
-Urgent
+##Urgent
 Make installation Conda for Relax with guideline updated in README.md
 
-Important
+##Important
 Test robustness by:
 Delete 1,2 or 3 lines consecutively
 Delete 2 non-consecutive
 What if the cross-section doesn’t cut every line
 
-Small improvement
+##Small improvement
 Make the visualization, drawing vectors of angle
 Now, can we interpolate the angle for polarity 1 from polarity 0?
 
-
-Long-term
+##Long-term
 The angle difference between the ellipse and the normal fit for the paper.
