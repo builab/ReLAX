@@ -297,12 +297,12 @@ def create_particles_starfile(df_optics, df_particles, output_star_file: str) ->
     """
     # Check if any optics group has 2D images
     if (df_optics["rlnImageDimensionality"] == 2).any():
-        df_general = pd.DataFrame({"rlnTomoSubTomosAre2DStacks": [1]})
+        dict_general = {"rlnTomoSubTomosAre2DStacks": 1}
     else:
-        df_general = pd.DataFrame()  # Empty if no 2D groups
+        dict_general = {}  # Empty if no 2D groups
     
     starfile.write(
-        {'general': df_general, 'optics': df_optics, 'particles': df_particles}, output_star_file
+        {'general': dict_general, 'optics': df_optics, 'particles': df_particles}, output_star_file
     )
     
 def add_particle_names(df_particles):

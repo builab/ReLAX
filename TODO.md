@@ -9,9 +9,10 @@ write star_format & Angpix in name.
 Fix rlnOpticsGroup in data_optics
 Add rlnOpticsGroup in mapping data_particles
 Add rlnAnglePsiFlipRatio 0 for relion5 format
+Use dict to make data_general in 1 line
+
 
 # NEXT
-data_general is in two lines
 Make installation Conda for Relax with guideline updated in README.md
 Writing star file not correct yet
 Change script? Not sort then same order to streamline the code
