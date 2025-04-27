@@ -213,6 +213,7 @@ def sanitize_particles_star(df_particles: pd.DataFrame, star_format: str, angpix
     elif star_format == 'relion5':
         clean_df['rlnAngleTiltPrior'] = clean_df['rlnAngleTilt']
         clean_df['rlnAnglePsiPrior'] = clean_df['rlnAnglePsi']
+        clean_df['rlnAnglePsiFlipRatio'] = 0
         clean_df = warp2relion5(clean_df, angpix, tomo_size)
         return clean_df.drop(columns=['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ'])
     else:
@@ -296,7 +297,7 @@ def create_particles_starfile(df_optics, df_particles, output_star_file: str) ->
     """
     # Check if any optics group has 2D images
     if (df_optics["rlnImageDimensionality"] == 2).any():
-        df_general = pd.DataFrame({"rlnTomoSubTomosAre2DStacks": [1]})
+        df_general = pd.DataFrame({"rlnTomoSubTomosAre2DStacks": 1})
     else:
         df_general = pd.DataFrame()  # Empty if no 2D groups
     
