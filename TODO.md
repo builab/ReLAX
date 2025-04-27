@@ -8,7 +8,7 @@ sorted matching star files for processing in imod2star
 write star_format & Angpix in name.
 Fix rlnOpticsGroup in data_optics
 Add rlnOpticsGroup in mapping data_particles
-Add rlnAnglePsiFlipRatio 0 for relion5 format
+Add rlnAnglePsiFlipRatio 1 for relion5 format
 Use dict to make data_general in 1 line
 
 
