@@ -229,15 +229,25 @@ def calculate_perpendicular_distance(point, plane_normal, reference_point):
 def find_cross_section_points(data, plane_normal, reference_point):
     """
     Find the points on each filament closest to the cross-sectional plane,
+    and record their distances.
     """
+    # UPDATE: keep track of the max distance of the point that make up the cross section
     cross_section = []
+    max_distance = 0
     grouped_data = data.groupby('rlnHelicalTubeID')
+    
     for filament_id, group in grouped_data:
         points = group[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
         distances = np.array([calculate_perpendicular_distance(point, plane_normal, reference_point) for point in points])
-        closest_point = group.iloc[np.argmin(distances)]
+        min_distance = np.min(distances)
+        max_distance = max(max_distance, min_distance)  # track global max distance
+        
+        closest_point = group.iloc[np.argmin(distances)].copy()
+        closest_point['distance_to_plane'] = min_distance  # add distance info
         cross_section.append(closest_point)
-    return pd.DataFrame(cross_section, columns=data.columns)
+
+    df_cross_section = pd.DataFrame(cross_section)
+    return df_cross_section, max_distance
 
 def find_shortest_filament(data):
     shortest_length, shortest_midpoint, shortest_filament_id = float('inf'), None, None

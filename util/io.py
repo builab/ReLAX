@@ -349,8 +349,17 @@ def process_object_data(
     Returns:
         DataFrame with processed data.
     """
+
+    # add the threshold analysis here, if the resulting cross section doesn't fit the criteria then return none of this model
+    cross_section, max_distance = process_cross_section(obj_data)
+
+    THRESHOLD = 200  # Example threshold in Angstroms (you can adjust or make configurable)
+
+    if max_distance > THRESHOLD:
+        print(f"Skipping object {obj_idx} due to excessive cross-section distance: {max_distance:.1f} Å")
+        return None  # Signal to imod2star to skip
     
-    cross_section = process_cross_section(obj_data)
+
     create_starfile([cross_section], output_star_file.replace('.star', '_cs.star'))
 
     rotated_cross_section = rotate_cross_section(cross_section)
@@ -407,6 +416,14 @@ def imod2star(
     
     objects = process_imod_point_file(input_file, mod_suffix, spacing, angpix, tomo_angpix, df_polarity)
     new_objects = [process_object_data(obj_data, output_star_file, fit_method, reorder, i) for i, obj_data in enumerate(objects)]
+
+    # UPDATE: Filter out skipped objects (None)
+    new_objects = [obj for obj in new_objects if obj is not None]
+
+    # Check if no valid objects left (all skipped)
+    if len(new_objects) == 0:
+        print(f"Skipping STAR file creation for {output_star_file} because all objects were skipped.")
+        return []
     
     create_starfile(new_objects, output_star_file)
     return new_objects
