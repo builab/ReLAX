@@ -227,6 +227,7 @@ def calculate_tilt_psi_angles(v):
     
     return np.degrees(rot), np.degrees(tilt), psi_degree
 
+# Redundant function, remove
 def define_plane(normal_vector, reference_point):
     return normal_vector, reference_point
     
@@ -236,15 +237,25 @@ def calculate_perpendicular_distance(point, plane_normal, reference_point):
 def find_cross_section_points(data, plane_normal, reference_point):
     """
     Find the points on each filament closest to the cross-sectional plane,
+    and record their distances.
     """
+    # UPDATE: keep track of the max distance of the point that make up the cross section
     cross_section = []
+    max_distance = 0
     grouped_data = data.groupby('rlnHelicalTubeID')
+    
     for filament_id, group in grouped_data:
         points = group[['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
         distances = np.array([calculate_perpendicular_distance(point, plane_normal, reference_point) for point in points])
-        closest_point = group.iloc[np.argmin(distances)]
+        min_distance = np.min(distances)
+        max_distance = max(max_distance, min_distance)  # track global max distance
+        
+        closest_point = group.iloc[np.argmin(distances)].copy()
+        closest_point['distance_to_plane'] = min_distance  # add distance info
         cross_section.append(closest_point)
-    return pd.DataFrame(cross_section, columns=data.columns)
+
+    df_cross_section = pd.DataFrame(cross_section)
+    return df_cross_section, max_distance
 
 def find_shortest_filament(data):
     shortest_length, shortest_midpoint, shortest_filament_id = float('inf'), None, None
@@ -262,6 +273,39 @@ def calculate_normal_vector(filament_points):
     normal_vector = np.sum(vectors, axis=0)
     return normal_vector / np.linalg.norm(normal_vector)
 
+# UPDATE: obtain normal vector with local averaging
+def calculate_normal_vector(filament_points, window_size=3):
+    """
+    Calculate normal vector using average of vectors near midpoint.
+    Args:
+        filament_points (np.ndarray): Nx3 array of filament points
+        window_size (int): How many points before and after midpoint to use
+    Returns:
+        np.ndarray: normalized normal vector
+    """
+    n_points = filament_points.shape[0]
+    mid_idx = n_points // 2  # midpoint index
+
+    # Define the start and end index to avoid out-of-bounds
+    start_idx = max(mid_idx - window_size, 0)
+    end_idx = min(mid_idx + window_size, n_points - 1)
+
+    # Collect vectors between consecutive points
+    vectors = []
+    for i in range(start_idx, end_idx):
+        v = filament_points[i + 1] - filament_points[i]
+        vectors.append(v)
+
+    vectors = np.array(vectors)
+
+    # Average vector
+    avg_vector = np.mean(vectors, axis=0)
+
+    # Normalize
+    normal_vector = avg_vector / np.linalg.norm(avg_vector)
+    
+    return normal_vector
+
 def process_cross_section(data):
     """ Even if the cross section doesn't have every filament, it can still project it from the shorter filament 
         Find automatically all the cross section points from middle of the shortest filament
@@ -270,9 +314,11 @@ def process_cross_section(data):
     #print(f"{shortest_filament_id}, {shortest_midpoint}")
     filament_points = data[data['rlnHelicalTubeID'] == shortest_filament_id][['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
     #print(filament_points)
+    # UPDATE: normal vector obtained from local normal vector function
     normal_vector = calculate_normal_vector(filament_points)
-    plane_normal, plane_point = define_plane(normal_vector, shortest_midpoint)
-    return find_cross_section_points(data, plane_normal, plane_point)
+    #plane_normal, plane_point = define_plane(normal_vector, shortest_midpoint)
+    # UPDATE: removed define_plane redundancy
+    return find_cross_section_points(data, normal_vector, shortest_midpoint)
     
     
 def process_specific_cross_section(pts_idx, data):
@@ -284,10 +330,7 @@ def process_specific_cross_section(pts_idx, data):
     filament_points = data[data['rlnHelicalTubeID'] == filament_id][['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
     #print(filament_points)
     normal_vector = calculate_normal_vector(filament_points)
-    #print(normal_vector)
-    plane_normal, plane_point = define_plane(normal_vector, pts)
-    return find_cross_section_points(data, plane_normal, plane_point)
-    
+    return find_cross_section_points(data, normal_vector, pts)
 
 def rotate_cross_section(cross_section):
     """
