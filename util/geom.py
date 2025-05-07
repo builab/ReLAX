@@ -264,7 +264,7 @@ def calculate_normal_vector(filament_points):
 
 def process_cross_section(data):
     """ Even if the cross section doesn't have every filament, it can still project it from the shorter filament 
-    	Find automatically all the cross section points from middle of the shortest filament
+        Find automatically all the cross section points from middle of the shortest filament
     """
     shortest_filament_id, shortest_midpoint = find_shortest_filament(data)
     #print(f"{shortest_filament_id}, {shortest_midpoint}")
@@ -277,14 +277,14 @@ def process_cross_section(data):
     
 def process_specific_cross_section(pts_idx, data):
     """ Modify to calculate the cross section points using a specific point
-    	Not done yet
     """
     filament_id = data.loc[pts_idx, 'rlnHelicalTubeID']
     pts = data.loc[pts_idx, ['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
-    print(f"{pts}, {filament_id}")
+    #print(f"{pts}, {filament_id}")
     filament_points = data[data['rlnHelicalTubeID'] == filament_id][['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
     #print(filament_points)
     normal_vector = calculate_normal_vector(filament_points)
+    #print(normal_vector)
     plane_normal, plane_point = define_plane(normal_vector, pts)
     return find_cross_section_points(data, plane_normal, plane_point)
     
@@ -398,7 +398,7 @@ def calculate_rot_angles_ellipse(rotated_cross_section):
 def calculate_rot_angle_twolines(rotated_cross_section, tube_id):
     """ 
     Calculate the rotation angle in a cross section
-	This return only rot angles, not the entire dataframe
+    This return only rot angles, not the entire dataframe
     """
     updated_cross_section = rotated_cross_section
     coords = rotated_cross_section[['rlnHelicalTubeID', 'rlnCoordinateX', 'rlnCoordinateY']].values
@@ -407,7 +407,7 @@ def calculate_rot_angle_twolines(rotated_cross_section, tube_id):
     delta_x = coords[0, 1] - coords[1, 1]  
     delta_y = coords[0, 2] - coords[1, 2]
     if coords[0, 0] == tube_id:
-    	rot_angle = np.degrees(np.arctan2(delta_y, delta_x)) - 180
+        rot_angle = np.degrees(np.arctan2(delta_y, delta_x)) + 180
     else:
         rot_angle = np.degrees(np.arctan2(delta_y, delta_x))
 
@@ -693,7 +693,7 @@ def fit_ellipse(x, y, axis_handle=None):
     
     # ERROR CHECK
     if len(x) < 5:
-    	print("WARNING: Not enough points to fit an ellipse!")
+        print("WARNING: Not enough points to fit an ellipse!")
 
 
     # Remove bias (mean) to improve numerical stability
