@@ -267,12 +267,6 @@ def find_shortest_filament(data):
             shortest_length, shortest_midpoint, shortest_filament_id = length, (min_point + max_point) / 2, filament_id
     return shortest_filament_id, shortest_midpoint
 
-def calculate_normal_vector(filament_points):
-    vectors = np.diff(filament_points, axis=0)
-    #print(vectors)
-    normal_vector = np.sum(vectors, axis=0)
-    return normal_vector / np.linalg.norm(normal_vector)
-
 # UPDATE: obtain normal vector with local averaging
 def calculate_normal_vector(filament_points, window_size=3):
     """
