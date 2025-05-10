@@ -404,12 +404,12 @@ def calculate_rot_angle_twolines(rotated_cross_section, tube_id):
     coords = rotated_cross_section[['rlnHelicalTubeID', 'rlnCoordinateX', 'rlnCoordinateY']].values
     # If the line line or 2nd line is calculated
     #print(coords[0, 1:2])
-    delta_x = coords[0, 1] - coords[1, 1]  
-    delta_y = coords[0, 2] - coords[1, 2]
+    delta_x = coords[1, 1] - coords[0, 1]  
+    delta_y = coords[1, 2] - coords[0, 2]
     if coords[0, 0] == tube_id:
-        rot_angle = np.degrees(np.arctan2(delta_y, delta_x)) + 180
-    else:
         rot_angle = np.degrees(np.arctan2(delta_y, delta_x))
+    else:
+        rot_angle = np.degrees(np.arctan2(delta_y, delta_x)) - 180
 
     return rot_angle
     
