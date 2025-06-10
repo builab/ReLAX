@@ -22,7 +22,8 @@ from util.geom import (
     fit_ellipse,
     renumber_filament_ids,
     get_filament_order,
-    plot_cs
+    plot_cs,
+    normalize_angle
 )
 
 def create_dir(directory: str) -> None:
@@ -350,7 +351,7 @@ def process_object_data(
         DataFrame with processed data.
     """
 
-    # add the threshold analysis here, if the resulting cross section doesn't fit the criteria then return none of this model
+    # UPDATE: add the threshold analysis here, if the resulting cross section doesn't fit the criteria then return none of this model
     cross_section, max_distance = process_cross_section(obj_data)
 
     THRESHOLD = 200  # Example threshold in Angstroms (you can adjust or make configurable)
@@ -358,23 +359,28 @@ def process_object_data(
     if max_distance > THRESHOLD:
         print(f"Skipping object {obj_idx} due to excessive cross-section distance: {max_distance:.1f} Å")
         return None  # Signal to imod2star to skip
-    
 
-    create_starfile([cross_section], output_star_file.replace('.star', '_cs.star'))
-
+    # Potential UPDATE: might need to make sure the x and y axis to be strictly positive
     rotated_cross_section = rotate_cross_section(cross_section)
-    updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
+    updated_cross_section, cs_with_virtual = calculate_rot_angles(rotated_cross_section, fit_method)
+
+    # Optional: Flip all rot angles by 180° if needed
+    updated_cross_section['rlnAngleRot'] = updated_cross_section['rlnAngleRot'].apply(lambda a: normalize_angle(a + 180))
+    cs_with_virtual['rlnAngleRot'] = cs_with_virtual['rlnAngleRot'].apply(lambda a: normalize_angle(a + 180))
+
+    create_starfile([cs_with_virtual], output_star_file.replace('.star', '_cs.star'))
 
     # Drawing path
     output_cs = output_star_file.replace(".star", f"_Cilia{obj_idx + 1}.png") 
     ellipse_params = fit_ellipse(rotated_cross_section['rlnCoordinateX'], rotated_cross_section['rlnCoordinateY'])       
+    
+    df_star = propagate_rot_to_entire_cilia(cs_with_virtual, obj_data)  
+
     if ellipse_params['a'] is None or ellipse_params['b'] is None:
         print(f"WARNING: Ellipse fitting failed for object {obj_idx}. Skipping plot.")
     else:
-        plot_ellipse_cs(rotated_cross_section, output_cs)  # creates the PLOT
-    
-    df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)  
-    
+        plot_ellipse_cs(rotated_cross_section, output_cs, full_star_data=df_star)  # creates the PLOT
+        
     sorted_filament_ids = get_filament_order(updated_cross_section, fit_method)
         
     if reorder:

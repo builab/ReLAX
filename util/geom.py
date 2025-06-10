@@ -264,9 +264,14 @@ def calculate_normal_vector(filament_points):
     vectors = np.diff(filament_points, axis=0)
     #print(vectors)
     normal_vector = np.sum(vectors, axis=0)
-    return normal_vector / np.linalg.norm(normal_vector)
+    normal_vector = normal_vector / np.linalg.norm(normal_vector)
+    # UPDATE
+    if normal_vector[2] < 0:
+        normal_vector = -normal_vector
 
-# UPDATE: obtain normal vector with local averaging
+    return normal_vector
+
+# UPDATE: obtain normal vector with local averaging 
 def calculate_normal_vector(filament_points, window_size=3):
     """
     Calculate normal vector using average of vectors near midpoint.
@@ -347,6 +352,26 @@ def rotate_cross_section(cross_section):
     # Replace rlnAngleTilt, rlnAnglePsi with 0
     rotated_cross_section[['rlnAngleTilt', 'rlnAnglePsi']] = 0
     return rotated_cross_section
+
+def enforce_consistent_cross_section_orientation(df):
+    """
+    Make sure rotated cross section is clockwise and right-facing.
+    """
+    points = df[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
+
+    # Check polygon signed area
+    area = polygon_signed_area(points)
+    if area > 0:
+        # Counterclockwise → Flip Y
+        df['rlnCoordinateY'] *= -1
+
+    # Check mean X direction
+    if df['rlnCoordinateX'].mean() < 0:
+        # Mostly on left → Flip X
+        df['rlnCoordinateX'] *= -1
+
+    return df
+
     
 def calculate_rot_angles(rotated_cross_section, fit_method):
     """ Calculate the rotation angle in a cross section """    
@@ -378,44 +403,139 @@ def calculate_rot_angles_simple(rotated_cross_section):
         rot_angles[i] = np.degrees(np.arctan2(delta_y, delta_x)) - 180
     updated_cross_section['rlnAngleRot'] = np.vectorize(normalize_angle)(rot_angles)
     return updated_cross_section
-    
+
+# UPDATE: Helper function to handle rot angle calculation missing filament case
+def detect_multiple_missing_points(rot_angles, gap_threshold=50):
+    """
+    Detect one or more large gaps in rot angles → indicate multiple missing filaments.
+
+    Returns:
+        List of (gap_start_angle, gap_end_angle)
+    """
+    sorted_angles = np.sort(rot_angles)
+    gaps = []
+    gap_pairs = []
+
+    for i in range(len(sorted_angles)):
+        next_angle = sorted_angles[(i + 1) % len(sorted_angles)]
+        delta = (next_angle - sorted_angles[i]) % 360
+        gaps.append(delta)
+
+    for idx, delta in enumerate(gaps):
+        if delta > gap_threshold:
+            gap_start_angle = sorted_angles[idx]
+            gap_end_angle = sorted_angles[(idx + 1) % len(sorted_angles)]
+            gap_pairs.append((gap_start_angle, gap_end_angle))
+
+    return gap_pairs
+
+def calculate_ellipse_point(ellipse_params, theta_deg):
+    """
+    Calculate (x, y) on ellipse at given theta.
+
+    Args:
+        ellipse_params (dict): Ellipse parameters (X0, Y0, a, b, phi).
+        theta_deg (float): Angle (deg) along ellipse.
+
+    Returns:
+        (x, y): Coordinates on ellipse.
+    """
+    theta = np.radians(theta_deg)
+    phi = ellipse_params['phi']
+
+    x0 = ellipse_params['X0']
+    y0 = ellipse_params['Y0']
+    a = ellipse_params['a']
+    b = ellipse_params['b']
+
+    x = x0 + a * np.cos(theta) * np.cos(phi) - b * np.sin(theta) * np.sin(phi)
+    y = y0 + a * np.cos(theta) * np.sin(phi) + b * np.sin(theta) * np.cos(phi)
+
+    return x, y    
     
 def calculate_rot_angles_ellipse(rotated_cross_section):
     """ 
-    Calculate the rotation angle in a cross section using ellipse method
-
+    Calculate rotation angle in a cross section using ellipse method,
+    and handle missing filament if filament count < 9.
+    Returns both the final cross section and the version with virtual point.
     """
-    updated_cross_section = rotated_cross_section
-    points = rotated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
+    updated_cross_section = rotated_cross_section.copy()
+    points = updated_cross_section[['rlnCoordinateX', 'rlnCoordinateY']].to_numpy()
     x = points[:, 0]
     y = points[:, 1]
+
     # Fit an ellipse to these points
     ellipse_params = fit_ellipse(x, y, axis_handle=None)
     center = [ellipse_params['X0'], ellipse_params['Y0']]
     axes = [ellipse_params['a'], ellipse_params['b']]
-    angle = ellipse_params['phi']
+    phi = ellipse_params['phi']
 
     print(f"Fitted center: {center}")
     print(f"Fitted axes: {axes}")
-    print(f"Fitted rotation (radians): {angle}")
-    elliptical_distortion = ellipse_params['a']/ellipse_params['b']
+    print(f"Fitted rotation (radians): {phi}")
+    elliptical_distortion = ellipse_params['a'] / ellipse_params['b']
     print(f"Elliptical distortion: {elliptical_distortion :.2f}")
-    
-    fitted_ellipse_pts = ellipse_points(center, axes, angle)
 
-    # Order the original points along the ellipse:
-    angles = angle_along_ellipse(center, axes, angle, points)
-    # Empirical correction by -270 degrees
+    # Calculate base rot angles
+    angles = angle_along_ellipse(center, axes, phi, points)
     angles = np.degrees(angles) - 270
-    
-    #sort_order = np.argsort(angles)
-    #print(sort_order)
-    #updated_cross_section['NewOrder'] = sort_order
-    
+    angles = np.vectorize(normalize_angle)(angles)
     updated_cross_section['rlnAngleRot'] = angles
-    updated_cross_section['rlnAngleRot'] = updated_cross_section['rlnAngleRot'].apply(normalize_angle) 
-    #print(updated_cross_section['rlnAngleRot'])
-    return updated_cross_section
+
+    cross_section_with_virtual = updated_cross_section.copy()
+
+    # --- If filament count is incomplete ---
+    num_filaments = updated_cross_section['rlnHelicalTubeID'].nunique()
+    if num_filaments < 9:
+        # === UPDATED FOR MULTIPLE MISSING POINTS ===
+        gap_infos = detect_multiple_missing_points(updated_cross_section['rlnAngleRot'])
+
+        for missing_idx, (gap_start_angle, gap_end_angle) in enumerate(gap_infos):
+            print(f"Missing point detected! Gap between {gap_start_angle:.1f}° and {gap_end_angle:.1f}°")
+
+            # Virtual point at +40 degrees from gap_start
+            virtual_theta = normalize_angle(gap_start_angle - 40)
+            virtual_x, virtual_y = calculate_ellipse_point(ellipse_params, virtual_theta)
+
+            print(f"\n Virtual point {missing_idx+1} (θ={virtual_theta:.1f}°) at ({virtual_x:.2f}, {virtual_y:.2f})")
+
+            # Create a dummy virtual point
+            dummy = updated_cross_section.iloc[0].copy()
+            dummy['rlnCoordinateX'] = virtual_x
+            dummy['rlnCoordinateY'] = virtual_y
+            dummy['rlnCoordinateZ'] = updated_cross_section['rlnCoordinateZ'].mean()
+            dummy['rlnHelicalTubeID'] = 999 + missing_idx  # ensure unique ID
+            dummy['rlnAngleRot'] = virtual_theta
+
+            # Add dummy to cross_section_with_virtual
+            cross_section_with_virtual = pd.concat([cross_section_with_virtual, pd.DataFrame([dummy])], ignore_index=True)
+
+            # Recalculate angles on temp set with dummy
+            temp_angles = angle_along_ellipse(center, axes, phi, cross_section_with_virtual[['rlnCoordinateX', 'rlnCoordinateY']].values)
+            temp_angles = np.degrees(temp_angles) - 270
+            temp_angles = np.vectorize(normalize_angle)(temp_angles)
+            cross_section_with_virtual['rlnAngleRot'] = temp_angles
+
+            # Find neighbors to virtual point
+            neighbors = updated_cross_section.copy()
+            neighbors['diff_start'] = np.abs(neighbors['rlnAngleRot'] - gap_start_angle)
+            neighbors['diff_end'] = np.abs(neighbors['rlnAngleRot'] - gap_end_angle)
+
+            neighbor_start_idx = neighbors['diff_start'].idxmin()
+            neighbor_end_idx = neighbors['diff_end'].idxmin()
+
+            for neighbor_idx in [neighbor_start_idx, neighbor_end_idx]:
+                point = updated_cross_section.loc[neighbor_idx]
+                nx, ny = point['rlnCoordinateX'], point['rlnCoordinateY']
+
+                new_rot = np.degrees(np.arctan2(virtual_y - ny, virtual_x - nx))
+                new_rot = normalize_angle(new_rot)
+                updated_cross_section.loc[neighbor_idx, 'rlnAngleRot'] = new_rot
+
+                print(f"Updated neighbor idx {neighbor_idx} rot angle to {new_rot:.1f}°")
+
+    return updated_cross_section, cross_section_with_virtual
+
     
 def get_filament_order(cs, fit_method):
     """
@@ -602,7 +722,7 @@ def plot_cs(cross_section, output_png=None):
         return plt  # Return the plt object for further customization
         
 
-def plot_ellipse_cs(cross_section, output_png):
+def plot_ellipse_cs(cross_section, output_png, full_star_data=None):
     """
     Plotting the cross section with ellipse fitting.
     
@@ -651,7 +771,26 @@ def plot_ellipse_cs(cross_section, output_png):
         # Add text annotation for elliptical distortion
         plt.text(np.mean(x), np.mean(y), f"Elliptical distortion: {elliptical_distortion:.2f}", 
                  fontsize=9, ha='center', va='center')
-        
+
+        # If full_star_data is provided, extract rot angles for matching HelicalTubeIDs
+        if full_star_data is not None and 'rlnHelicalTubeID' in cross_section.columns:
+            rot_lookup = (
+                full_star_data[['rlnHelicalTubeID', 'rlnAngleRot']]
+                .drop_duplicates(subset='rlnHelicalTubeID')
+                .set_index('rlnHelicalTubeID')['rlnAngleRot']
+                .to_dict()
+            )
+            # Add rot angle to each row if available
+            cross_section['rlnAngleRot'] = cross_section['rlnHelicalTubeID'].map(rot_lookup)
+
+            # Plot rotation vectors
+            for _, row in cross_section.iterrows():
+                if not np.isnan(row.get('rlnAngleRot', np.nan)):
+                    x0, y0 = row['rlnCoordinateX'], row['rlnCoordinateY']
+                    theta = np.deg2rad(row['rlnAngleRot'])
+                    dx, dy = np.cos(theta) * 10, np.sin(theta) * 10  # arrow scale
+                    plt.arrow(x0, y0, dx, dy, head_width=3, head_length=5, fc='blue', ec='blue', alpha=0.7)
+
         # Add legend and adjust plot
         plt.legend()
         plt.xlabel('X (nm)')
@@ -677,6 +816,7 @@ def plot_ellipse_cs(cross_section, output_png):
         plt.close()
         
         return -1  # Return -1 to indicate failure
+    
 
 def fit_ellipse(x, y, axis_handle=None):
     """
