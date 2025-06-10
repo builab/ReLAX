@@ -154,12 +154,19 @@ def robust_interpolate_spline(points, angpix, spacing):
     # Evaluate the spline at dense samples
     dense_points = np.array(splev(distances, tck)).T
     
+    #print(dense_points)
+    
     # Calculate cumulative distances
     cum_distances_all = cumulative_distance(dense_points * angpix)
     
+    print(cum_distances_all[-1])
+    print(f"{spacing}")
+        
     # Check if the total distance is zero or very small
     if cum_distances_all[-1] < spacing * 0.1:
         # Path is too short, return the original points
+        print(cum_distance_alls[-1])
+        print(spacing)
         return points, cumulative_distance(points * angpix)
     
     # Resample at equal intervals
@@ -305,7 +312,9 @@ def calculate_normal_vector(filament_points, window_size=3):
     return normal_vector
 
 def process_cross_section(data):
-    """ Even if the cross section doesn't have every filament, it can still project it from the shorter filament """
+    """ Even if the cross section doesn't have every filament, it can still project it from the shorter filament 
+        Find automatically all the cross section points from middle of the shortest filament
+    """
     shortest_filament_id, shortest_midpoint = find_shortest_filament(data)
     #print(f"{shortest_filament_id}, {shortest_midpoint}")
     filament_points = data[data['rlnHelicalTubeID'] == shortest_filament_id][['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
@@ -315,6 +324,18 @@ def process_cross_section(data):
     #plane_normal, plane_point = define_plane(normal_vector, shortest_midpoint)
     # UPDATE: removed define_plane redundancy
     return find_cross_section_points(data, normal_vector, shortest_midpoint)
+    
+    
+def process_specific_cross_section(pts_idx, data):
+    """ Modify to calculate the cross section points using a specific point
+    """
+    filament_id = data.loc[pts_idx, 'rlnHelicalTubeID']
+    pts = data.loc[pts_idx, ['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
+    #print(f"{pts}, {filament_id}")
+    filament_points = data[data['rlnHelicalTubeID'] == filament_id][['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']].values
+    #print(filament_points)
+    normal_vector = calculate_normal_vector(filament_points)
+    return find_cross_section_points(data, normal_vector, pts)
 
 def rotate_cross_section(cross_section):
     """
@@ -404,6 +425,7 @@ def calculate_rot_angles_simple(rotated_cross_section):
     updated_cross_section['rlnAngleRot'] = np.vectorize(normalize_angle)(rot_angles)
     return updated_cross_section
 
+
 # UPDATE: Helper function to handle rot angle calculation missing filament case
 def detect_multiple_missing_points(rot_angles, gap_threshold=50):
     """
@@ -452,6 +474,7 @@ def calculate_ellipse_point(ellipse_params, theta_deg):
     y = y0 + a * np.cos(theta) * np.sin(phi) + b * np.sin(theta) * np.cos(phi)
 
     return x, y    
+
     
 def calculate_rot_angles_ellipse(rotated_cross_section):
     """ 
@@ -536,6 +559,23 @@ def calculate_rot_angles_ellipse(rotated_cross_section):
 
     return updated_cross_section, cross_section_with_virtual
 
+def calculate_rot_angle_twolines(rotated_cross_section, tube_id):
+    """ 
+    Calculate the rotation angle in a cross section
+    This return only rot angles, not the entire dataframe
+    """
+    updated_cross_section = rotated_cross_section
+    coords = rotated_cross_section[['rlnHelicalTubeID', 'rlnCoordinateX', 'rlnCoordinateY']].values
+    # If the line line or 2nd line is calculated
+    #print(coords[0, 1:2])
+    delta_x = coords[0, 1] - coords[1, 1]  
+    delta_y = coords[0, 2] - coords[1, 2]
+    if coords[0, 0] == tube_id:
+        rot_angle = np.degrees(np.arctan2(delta_y, delta_x)) + 180
+    else:
+        rot_angle = np.degrees(np.arctan2(delta_y, delta_x))
+
+    return rot_angle
     
 def get_filament_order(cs, fit_method):
     """
@@ -837,7 +877,7 @@ def fit_ellipse(x, y, axis_handle=None):
     
     # ERROR CHECK
     if len(x) < 5:
-    	print("WARNING: Not enough points to fit an ellipse!")
+        print("WARNING: Not enough points to fit an ellipse!")
 
 
     # Remove bias (mean) to improve numerical stability
