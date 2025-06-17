@@ -9,14 +9,17 @@ from typing import List, Dict, Union, Tuple, Optional
 import pandas as pd
 import numpy as np
 import starfile
+import math
 
 from util.imod import run_model2point, run_point2model, get_obj_ids_from_model, scale_imod_model
 from util.geom import (
     robust_interpolate_spline, 
     calculate_tilt_psi_angles, 
-    process_cross_section, 
+    process_cross_section,
+    process_specific_cross_section, 
     rotate_cross_section, 
     calculate_rot_angles, 
+    calculate_rot_angle_twolines,
     propagate_rot_to_entire_cilia, 
     plot_ellipse_cs,
     fit_ellipse,
@@ -119,7 +122,7 @@ def process_imod_point_file(
     for obj_id, group in df.groupby("Object"):
         results = []
         polarity = polarity_lookup(df_polarity, tomo_name, obj_id)
-        polarity_prob = 1.0 if polarity >= 0 else 0.5
+        polarity_prob = 0 if polarity >= 0 else 0.5
         
         print(f'Fitting {tomo_name} Cilia {obj_id} with polarity value of {polarity}')
         
@@ -127,6 +130,7 @@ def process_imod_point_file(
             points = filament_group[["X", "Y", "Z"]].values
             if polarity == 1:
                 points = np.flipud(points)
+                #print(points)
             interpolated_pts, cum_distances_angst = robust_interpolate_spline(points, tomo_angpix, spacing)
             
             for i in range(len(interpolated_pts) - 1):
@@ -365,10 +369,9 @@ def process_object_data(
         plot_ellipse_cs(rotated_cross_section, output_cs)  # creates the PLOT
     
     df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)  
-    
-    sorted_filament_ids = get_filament_order(updated_cross_section, fit_method)
-        
+            
     if reorder:
+        sorted_filament_ids = get_filament_order(updated_cross_section, fit_method)
         print('Reorder the doublet number: ', sorted_filament_ids)
         df_sorted, sorted_cross_section = renumber_filament_ids(df_star, sorted_filament_ids, updated_cross_section)
         return df_sorted
@@ -410,6 +413,67 @@ def imod2star(
     
     create_starfile(new_objects, output_star_file)
     return new_objects
+    
+def imod_cp2star(
+    input_file: str, 
+    output_star_file: str, 
+    angpix: float, 
+    tomo_angpix: float,
+    spacing: float, 
+    fit_method: str, 
+    df_polarity: pd.DataFrame, 
+    mod_suffix: str, 
+    reorder: bool
+) -> List[pd.DataFrame]:
+    """
+    Convert IMOD model file to STAR file.
+    Args:
+        input_file: Path to the input .mod file.
+        output_star_file: Path to the output .star file.
+        angpix: Pixel size in Angstroms.
+        tomo_angpix: Tomogram pixel size in Angstroms.
+        spacing: Spacing for interpolation.
+        fit_method: Method for fitting.
+        df_polarity: DataFrame with polarity information.
+        mod_suffix: Suffix to remove from the mod file name.
+    Returns:
+        List of DataFrames with processed data.
+    """
+    print(f'Input model file: {input_file}')
+    print(f'Output star file: {output_star_file}')
+    
+    objects = process_imod_point_file(input_file, mod_suffix, spacing, angpix, tomo_angpix, df_polarity)
+    new_objects = [process_cp_object_data(obj_data) for i, obj_data in enumerate(objects)]
+    
+    create_starfile(new_objects, output_star_file)
+    return new_objects
+    
+
+def process_cp_object_data(obj_data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Process a dataframe containing points from two parallel lines and calculate the rlnAngleRot
+    for each point based on the vector connecting it to the intersection point on the other line.
+    
+    Args:
+        obj_data: DataFrame with points from two parallel lines (same object but different rlnHelicalTubeID)        
+    Returns:
+        DataFrame with updated rlnAngleRot values.
+    """
+    # Make sure 'rlnAngleRot' column exists (initialize if needed)
+    if 'rlnAngleRot' not in obj_data.columns:
+        obj_data['rlnAngleRot'] = np.nan  # Initialize with NaN or 0.0
+    
+    for tube_id, group_indices in obj_data.groupby('rlnHelicalTubeID').groups.items():
+        for idx in group_indices:
+            cross_section = process_specific_cross_section(idx, obj_data)
+            rotated_cross_section = rotate_cross_section(cross_section)
+            rot = calculate_rot_angle_twolines(rotated_cross_section, tube_id)
+            
+            # Correct way to modify the DataFrame in-place
+            obj_data.at[idx, 'rlnAngleRot'] = rot
+    
+    return obj_data
+    
     
 def make_common_star(df_particles, angpix, tomo_size):
     """Script to add column in relion5 and warp format"""
