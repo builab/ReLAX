@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import starfile
 import math
+import imodmodel
 
 from util.imod import run_model2point, run_point2model, get_obj_ids_from_model, scale_imod_model
 from util.geom import (
@@ -25,7 +26,8 @@ from util.geom import (
     fit_ellipse,
     renumber_filament_ids,
     get_filament_order,
-    plot_cs
+    plot_cs,
+    normalize_angle
 )
 
 def create_dir(directory: str) -> None:
@@ -93,7 +95,9 @@ def process_imod_point_file(
     df_polarity: pd.DataFrame
 ) -> List[pd.DataFrame]:
     """
-    Reads IMOD .txt file, interpolates points, and computes angles.
+    Reads IMOD .mod file directly using imodmodel, interpolates points, and computes angles.
+    Replaces the legacy method that used an intermediate .txt file.
+
     Args:
         input_file: Path to the input .mod file.
         mod_suffix: Suffix to remove from the mod file name.
@@ -101,45 +105,52 @@ def process_imod_point_file(
         angpix: Pixel size in Angstroms.
         tomo_angpix: Tomogram pixel size in Angstroms.
         df_polarity: DataFrame with polarity information.
+
     Returns:
         List of DataFrames, each representing points in the same object.
     """
-    input_txt = input_file.replace(".mod", ".txt")
-    run_model2point(input_file, input_txt)
-    
+    df_mod = imodmodel.read(input_file)
+
+    # Convert Angstrom units if necessary
+    df_mod[["x", "y", "z"]] *= angpix / tomo_angpix
+
+    # Rename columns to match previous logic
+    df_mod.rename(columns={
+        "object_id": "Object",
+        "contour_id": "Filament",
+        "x": "X",
+        "y": "Y",
+        "z": "Z"
+    }, inplace=True)
+
+    df = df_mod[["Object", "Filament", "X", "Y", "Z"]]
+
     base_name = os.path.basename(input_file)
     tomo_name = base_name.removesuffix(mod_suffix + ".mod")
-    
-    with open(input_txt, "r") as file:
-        lines = [list(map(float, line.strip().split())) for line in file]
-    
-    df = pd.DataFrame(lines, columns=["Object", "Filament", "X", "Y", "Z"])
-    df[["X", "Y", "Z"]] *= angpix / tomo_angpix
-    
+
     objects = []
     tomo_part_id_counter = 0
-    
+
     for obj_id, group in df.groupby("Object"):
         results = []
         polarity = polarity_lookup(df_polarity, tomo_name, obj_id)
         polarity_prob = 0 if polarity >= 0 else 0.5
-        
+
         print(f'Fitting {tomo_name} Cilia {obj_id} with polarity value of {polarity}')
-        
+
         for filament_id, filament_group in group.groupby("Filament"):
             points = filament_group[["X", "Y", "Z"]].values
             if polarity == 1:
                 points = np.flipud(points)
-                #print(points)
             interpolated_pts, cum_distances_angst = robust_interpolate_spline(points, tomo_angpix, spacing)
-            
+
             for i in range(len(interpolated_pts) - 1):
                 vector = interpolated_pts[i + 1] - interpolated_pts[i]
                 rot, tilt, psi = calculate_tilt_psi_angles(vector)
                 tomo_part_id = tomo_part_id_counter + i + 1
                 helical_tube_id = (int(obj_id) - 1) * 10 + int(filament_id)
                 coords = interpolated_pts[i] / angpix * tomo_angpix
-                
+
                 results.append([
                     tomo_name, 
                     helical_tube_id, 
@@ -151,9 +162,9 @@ def process_imod_point_file(
                     tomo_part_id, 
                     polarity_prob
                 ])
-                
+
             tomo_part_id_counter = tomo_part_id
-        
+
         columns = [
             "rlnTomoName", 
             "rlnHelicalTubeID", 
@@ -168,7 +179,7 @@ def process_imod_point_file(
             "rlnAnglePsiProbability"
         ]
         objects.append(pd.DataFrame(results, columns=columns))
-    
+
     return objects
 
 def create_starfile(df_list: Union[List[pd.DataFrame], pd.DataFrame], output_star_file: str) -> None:
@@ -353,23 +364,39 @@ def process_object_data(
     Returns:
         DataFrame with processed data.
     """
-    
-    cross_section = process_cross_section(obj_data)
-    create_starfile([cross_section], output_star_file.replace('.star', '_cs.star'))
 
+    # UPDATE: add the threshold analysis here, if the resulting cross section doesn't fit the criteria then return none of this model
+    cross_section, max_distance = process_cross_section(obj_data)
+
+    THRESHOLD = 200  # Example threshold in Angstroms (you can adjust or make configurable)
+
+    if max_distance > THRESHOLD:
+        print(f"Skipping object {obj_idx} due to excessive cross-section distance: {max_distance:.1f} Å")
+        return None  # Signal to imod2star to skip
+
+    # Potential UPDATE: might need to make sure the x and y axis to be strictly positive
     rotated_cross_section = rotate_cross_section(cross_section)
-    updated_cross_section = calculate_rot_angles(rotated_cross_section, fit_method)
+    updated_cross_section, cs_with_virtual = calculate_rot_angles(rotated_cross_section, fit_method)
+
+    # Optional: Flip all rot angles by 180° if needed
+    updated_cross_section['rlnAngleRot'] = updated_cross_section['rlnAngleRot'].apply(lambda a: normalize_angle(a + 180))
+    cs_with_virtual['rlnAngleRot'] = cs_with_virtual['rlnAngleRot'].apply(lambda a: normalize_angle(a + 180))
+
+    create_starfile([cs_with_virtual], output_star_file.replace('.star', '_cs.star'))
 
     # Drawing path
     output_cs = output_star_file.replace(".star", f"_Cilia{obj_idx + 1}.png") 
     ellipse_params = fit_ellipse(rotated_cross_section['rlnCoordinateX'], rotated_cross_section['rlnCoordinateY'])       
+    
+    df_star = propagate_rot_to_entire_cilia(cs_with_virtual, obj_data)  
+
     if ellipse_params['a'] is None or ellipse_params['b'] is None:
         print(f"WARNING: Ellipse fitting failed for object {obj_idx}. Skipping plot.")
     else:
-        plot_ellipse_cs(rotated_cross_section, output_cs)  # creates the PLOT
-    
-    df_star = propagate_rot_to_entire_cilia(updated_cross_section, obj_data)  
-            
+        plot_ellipse_cs(rotated_cross_section, output_cs, full_star_data=df_star)  # creates the PLOT
+        
+    sorted_filament_ids = get_filament_order(updated_cross_section, fit_method)
+        
     if reorder:
         sorted_filament_ids = get_filament_order(updated_cross_section, fit_method)
         print('Reorder the doublet number: ', sorted_filament_ids)
@@ -410,6 +437,14 @@ def imod2star(
     
     objects = process_imod_point_file(input_file, mod_suffix, spacing, angpix, tomo_angpix, df_polarity)
     new_objects = [process_object_data(obj_data, output_star_file, fit_method, reorder, i) for i, obj_data in enumerate(objects)]
+
+    # UPDATE: Filter out skipped objects (None)
+    new_objects = [obj for obj in new_objects if obj is not None]
+
+    # Check if no valid objects left (all skipped)
+    if len(new_objects) == 0:
+        print(f"Skipping STAR file creation for {output_star_file} because all objects were skipped.")
+        return []
     
     create_starfile(new_objects, output_star_file)
     return new_objects
