@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import starfile
 import math
+import imodmodel
 
 from util.imod import run_model2point, run_point2model, get_obj_ids_from_model, scale_imod_model
 from util.geom import (
@@ -94,7 +95,9 @@ def process_imod_point_file(
     df_polarity: pd.DataFrame
 ) -> List[pd.DataFrame]:
     """
-    Reads IMOD .txt file, interpolates points, and computes angles.
+    Reads IMOD .mod file directly using imodmodel, interpolates points, and computes angles.
+    Replaces the legacy method that used an intermediate .txt file.
+
     Args:
         input_file: Path to the input .mod file.
         mod_suffix: Suffix to remove from the mod file name.
@@ -102,45 +105,52 @@ def process_imod_point_file(
         angpix: Pixel size in Angstroms.
         tomo_angpix: Tomogram pixel size in Angstroms.
         df_polarity: DataFrame with polarity information.
+
     Returns:
         List of DataFrames, each representing points in the same object.
     """
-    input_txt = input_file.replace(".mod", ".txt")
-    run_model2point(input_file, input_txt)
-    
+    df_mod = imodmodel.read(input_file)
+
+    # Convert Angstrom units if necessary
+    df_mod[["x", "y", "z"]] *= angpix / tomo_angpix
+
+    # Rename columns to match previous logic
+    df_mod.rename(columns={
+        "object_id": "Object",
+        "contour_id": "Filament",
+        "x": "X",
+        "y": "Y",
+        "z": "Z"
+    }, inplace=True)
+
+    df = df_mod[["Object", "Filament", "X", "Y", "Z"]]
+
     base_name = os.path.basename(input_file)
     tomo_name = base_name.removesuffix(mod_suffix + ".mod")
-    
-    with open(input_txt, "r") as file:
-        lines = [list(map(float, line.strip().split())) for line in file]
-    
-    df = pd.DataFrame(lines, columns=["Object", "Filament", "X", "Y", "Z"])
-    df[["X", "Y", "Z"]] *= angpix / tomo_angpix
-    
+
     objects = []
     tomo_part_id_counter = 0
-    
+
     for obj_id, group in df.groupby("Object"):
         results = []
         polarity = polarity_lookup(df_polarity, tomo_name, obj_id)
         polarity_prob = 0 if polarity >= 0 else 0.5
-        
+
         print(f'Fitting {tomo_name} Cilia {obj_id} with polarity value of {polarity}')
-        
+
         for filament_id, filament_group in group.groupby("Filament"):
             points = filament_group[["X", "Y", "Z"]].values
             if polarity == 1:
                 points = np.flipud(points)
-                #print(points)
             interpolated_pts, cum_distances_angst = robust_interpolate_spline(points, tomo_angpix, spacing)
-            
+
             for i in range(len(interpolated_pts) - 1):
                 vector = interpolated_pts[i + 1] - interpolated_pts[i]
                 rot, tilt, psi = calculate_tilt_psi_angles(vector)
                 tomo_part_id = tomo_part_id_counter + i + 1
                 helical_tube_id = (int(obj_id) - 1) * 10 + int(filament_id)
                 coords = interpolated_pts[i] / angpix * tomo_angpix
-                
+
                 results.append([
                     tomo_name, 
                     helical_tube_id, 
@@ -152,9 +162,9 @@ def process_imod_point_file(
                     tomo_part_id, 
                     polarity_prob
                 ])
-                
+
             tomo_part_id_counter = tomo_part_id
-        
+
         columns = [
             "rlnTomoName", 
             "rlnHelicalTubeID", 
@@ -169,7 +179,7 @@ def process_imod_point_file(
             "rlnAnglePsiProbability"
         ]
         objects.append(pd.DataFrame(results, columns=columns))
-    
+
     return objects
 
 def create_starfile(df_list: Union[List[pd.DataFrame], pd.DataFrame], output_star_file: str) -> None:
